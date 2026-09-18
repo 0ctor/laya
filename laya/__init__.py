@@ -3,7 +3,7 @@
 from .agent import Agent, RLAgent, load
 from .email import clean_email_body, email_questions, email_state
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     "Agent",
     "RLAgent",
