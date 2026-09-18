@@ -1,4 +1,4 @@
-# Laya (लय)
+# Laya
 
 Fast, non-autoregressive System 1 decision engine with mathematically calibrated probabilities.
 
