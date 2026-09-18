@@ -97,6 +97,11 @@ class Agent:
 
         model_dir = model_id_or_path
         if not os.path.exists(model_dir):
+            if model_id_or_path.startswith(("/", "./", "../")) or os.path.isabs(model_id_or_path):
+                raise FileNotFoundError(
+                    f"Local model path not found: {model_id_or_path!r}. "
+                    f"Check that the directory exists and that training saved the model successfully."
+                )
             from huggingface_hub import snapshot_download
 
             model_dir = snapshot_download(model_id_or_path, token=token or os.environ.get("HF_TOKEN"))
