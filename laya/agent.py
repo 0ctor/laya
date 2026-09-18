@@ -88,7 +88,7 @@ class Agent:
 
     def __init__(
         self,
-        model_id_or_path: str = "convaiinnovations/rl-agent",
+        model_id_or_path: str = "convaiinnovations/laya",
         device: Optional[str] = None,
         token: Optional[str] = None,
     ):
@@ -293,6 +293,6 @@ class Agent:
 RLAgent = Agent
 
 
-def load(model_id_or_path: str = "convaiinnovations/rl-agent", device: Optional[str] = None, token: Optional[str] = None) -> Agent:
+def load(model_id_or_path: str = "convaiinnovations/laya", device: Optional[str] = None, token: Optional[str] = None) -> Agent:
     """Helper function to load a Laya agent model."""
     return Agent(model_id_or_path, device=device, token=token)
