@@ -2,8 +2,9 @@
 
 from .agent import Agent, RLAgent, load
 from .email import clean_email_body, email_questions, email_state
+from .presets import guard_questions, moderation_questions, router_questions, triage_questions
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __all__ = [
     "Agent",
     "RLAgent",
@@ -11,5 +12,9 @@ __all__ = [
     "clean_email_body",
     "email_questions",
     "email_state",
+    "guard_questions",
+    "moderation_questions",
+    "router_questions",
+    "triage_questions",
     "__version__",
 ]

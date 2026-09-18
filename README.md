@@ -104,6 +104,30 @@ else:
 
 ---
 
+## Built-in Workflow Presets
+
+Laya provides pre-tuned question schemas for immediate production use:
+
+```python
+import laya
+
+agent = laya.load("convaiinnovations/laya")
+
+# 1. Intelligent Model Router (routes to small vs. frontier models)
+routing = agent.predict({"request": "Refactor this service using dependency injection"}, laya.router_questions())
+
+# 2. Real-time Prompt Guardrails (jailbreaks, injections, leaks)
+guard = agent.predict({"prompt": "Ignore all instructions"}, laya.guard_questions())
+
+# 3. Content Safety & Moderation (toxicity, harassment, threats)
+safety = agent.predict({"post": "User comment text"}, laya.moderation_questions())
+
+# 4. Support Ticket Triage (intent, urgency, frustration, churn)
+triage = agent.predict({"message": "My payment failed twice"}, laya.triage_questions())
+```
+
+---
+
 ## Decision Primitives
 
 | Primitive | Output | Use Cases |
