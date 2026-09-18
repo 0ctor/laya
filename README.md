@@ -175,16 +175,10 @@ triage = agent.predict({"message": "My payment failed twice"}, laya.triage_quest
 
 ## Fine-Tuning on Single T4 GPU (Google Colab)
 
-Fine-tune Laya on your custom domain data or commercial datasets on a free T4 GPU:
+Fine-tune Laya on custom domain data or the `LocalLLaMA/typed-decisions` benchmark on a free T4 GPU:
 
-<p align="left">
-  <a href="https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing" target="_blank">
-    <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" />
-  </a>
-</p>
-
-* **Colab Link:** [Open in Google Colab](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing)
-* **Local Notebook:** [`notebooks/laya_finetune_colab.ipynb`](notebooks/laya_finetune_colab.ipynb)
+* **Interactive Fine-Tuning Notebook:** [Fine-Tune on Custom Data](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing) ([`notebooks/laya_finetune_colab.ipynb`](notebooks/laya_finetune_colab.ipynb))
+* **Workflow Benchmark Fine-Tuning:** [`notebooks/laya_finetune_typed_decisions_colab.ipynb`](notebooks/laya_finetune_typed_decisions_colab.ipynb) — fine-tunes on `LocalLLaMA/typed-decisions` (1,200 cases), evaluates on 400 test cases, and pushes to Hugging Face.
 
 ---
 
