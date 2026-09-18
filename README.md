@@ -2,6 +2,7 @@
 
 Fast, non-autoregressive System 1 decision engine with mathematically calibrated probabilities.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing)
 [![PyPI version](https://img.shields.io/pypi/v/laya.svg)](https://pypi.org/project/laya/)
 [![Hugging Face Model](https://img.shields.io/badge/%F0%9F%A4%97%20Model-convaiinnovations%2Flaya-blue)](https://huggingface.co/convaiinnovations/laya)
 [![Hugging Face Space](https://img.shields.io/badge/%F0%9F%A4%97%20Space-laya--demo-orange)](https://huggingface.co/spaces/convaiinnovations/laya-demo)
@@ -169,6 +170,21 @@ triage = agent.predict({"message": "My payment failed twice"}, laya.triage_quest
 * **Hugging Face Model:** [convaiinnovations/laya](https://huggingface.co/convaiinnovations/laya)
 * **Interactive Web Demo:** [convaiinnovations/laya-demo](https://huggingface.co/spaces/convaiinnovations/laya-demo)
 * **Engineering Writeup:** [Read the full story on Dev.to](https://dev.to/nandakishor_m_6cc0adfde9f/i-built-non-autoregressive-decision-models-a-year-ago-then-a-frontier-lab-called-it-a-18me)
+
+---
+
+## Fine-Tuning on Single T4 GPU (Google Colab)
+
+Fine-tune Laya on your custom domain data or commercial datasets on a free T4 GPU:
+
+<p align="left">
+  <a href="https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing" target="_blank">
+    <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" />
+  </a>
+</p>
+
+* **Colab Link:** [Open in Google Colab](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing)
+* **Local Notebook:** [`notebooks/laya_finetune_colab.ipynb`](notebooks/laya_finetune_colab.ipynb)
 
 ---
 

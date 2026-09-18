@@ -123,6 +123,66 @@ def build_model(cfg: Dict, encoder_dir: Optional[str] = None) -> DecisionModel:
     return DecisionModel(enc, cfg.get("head_layers", 2), len(cfg.get("act_costs", {})) + 1)
 
 
+def proper_reward(
+    q: torch.Tensor,
+    target: torch.Tensor,
+    qtype: torch.Tensor,
+    mask: torch.Tensor,
+    w_sph: float = 0.5,
+    w_rps: float = 1.0,
+    log_floor: float = -9.21,
+) -> torch.Tensor:
+    """Strictly proper scoring rule reward: log score + spherical score + ranked probability score.
+
+    q: [..., N, K] reported distributions
+    target: [N, K] (one-hot or soft target distributions)
+    """
+    q = q * mask
+    logq = torch.log(q.clamp_min(1e-12)).clamp_min(log_floor)
+    log_score = (target * logq).sum(-1)
+    sph = (target * q).sum(-1) / q.norm(dim=-1).clamp_min(1e-9)
+    r = log_score + w_sph * sph
+    is_score = (qtype == QTYPES["score"]).float()
+    if is_score.any():
+        k = mask.sum(-1).clamp(min=2).float()
+        cdf_q = torch.cumsum(q, -1)
+        cdf_t = torch.cumsum(target, -1)
+        rps = (((cdf_q - cdf_t) ** 2) * mask).sum(-1) / (k - 1)
+        r = r - w_rps * rps * is_score
+    return r
+
+
+def td_lambda_targets(p_true: torch.Tensor, batch: Dict, lam: float = 1.0) -> torch.Tensor:
+    """TD(lambda) targets for multi-turn conversation trajectories."""
+    target = batch["target"].clone()
+    groups = batch.get("ep_group")
+    if groups is None:
+        return target
+    for g in torch.unique(groups[groups >= 0]).tolist():
+        idx = (groups == g).nonzero(as_tuple=True)[0]
+        idx = idx[torch.argsort(batch["ep_step"][idx])]
+        y = batch["target"][idx[-1], 1]
+        G = y
+        for j in range(len(idx) - 1, -1, -1):
+            if j < len(idx) - 1:
+                G = (1 - lam) * p_true[idx[j + 1]] + lam * G
+            target[idx[j], 0], target[idx[j], 1] = 1 - G, G
+    return target
+
+
+def ece_score(conf: np.ndarray, correct: np.ndarray, bins: int = 15) -> float:
+    """Expected Calibration Error across confidence bins."""
+    if len(conf) == 0:
+        return float("nan")
+    edges = np.linspace(0, 1, bins + 1)
+    e = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        sel = (conf > lo) & (conf <= hi)
+        if sel.any():
+            e += sel.mean() * abs(conf[sel].mean() - correct[sel].mean())
+    return float(e)
+
+
 def confidence_from_probs(p: np.ndarray, k: int) -> float:
     """Normalized Shannon entropy confidence: 1 - H(p) / log(k)."""
     if k < 2:
@@ -151,17 +211,27 @@ def collate_items(batch, pad_id: int):
     att = torch.zeros((n, L), dtype=torch.long)
     mpos = torch.zeros((n, kmax), dtype=torch.long)
     mmask = torch.zeros((n, kmax), dtype=torch.bool)
+    has_target = any("target" in it for it in items)
+    target = torch.zeros((n, kmax), dtype=torch.float32) if has_target else None
+
     for i, it in enumerate(items):
         ids[i, : len(it["ids"])] = torch.tensor(it["ids"])
         att[i, : len(it["ids"])] = 1
         k = len(it["markers"])
         mpos[i, :k] = torch.tensor(it["markers"])
         mmask[i, :k] = True
-    return {
+        if has_target and "target" in it:
+            target[i, : len(it["target"])] = torch.tensor(it["target"], dtype=torch.float32)
+
+    res = {
         "input_ids": ids,
         "attention_mask": att,
         "marker_pos": mpos,
         "marker_mask": mmask,
         "qtype": torch.tensor([it["qtype"] for it in items]),
-        "meta": [{k: it[k] for k in it if k not in ("ids", "markers")} for it in items],
+        "label": torch.tensor([it.get("label", -1) for it in items]),
+        "meta": [{k: it[k] for k in it if k not in ("ids", "markers", "target")} for it in items],
     }
+    if target is not None:
+        res["target"] = target
+    return res
