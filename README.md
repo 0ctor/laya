@@ -111,7 +111,7 @@ else:
 ## Live Demo & Resources
 
 * **Hugging Face Model:** [convaiinnovations/rl-agent](https://huggingface.co/convaiinnovations/rl-agent)
-* **Interactive Web Demo:** [convaiinnovations/rl-agent-demo](https://huggingface.co/spaces/convaiinnovations/rl-agent-demo)
+* **Interactive Web Demo:** [convaiinnovations/laya-demo](https://huggingface.co/spaces/convaiinnovations/laya-demo)
 
 ---
 

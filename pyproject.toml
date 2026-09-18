@@ -35,4 +35,4 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://huggingface.co/convaiinnovations/rl-agent"
-Demo = "https://huggingface.co/spaces/convaiinnovations/rl-agent-demo"
+Demo = "https://huggingface.co/spaces/convaiinnovations/laya-demo"
