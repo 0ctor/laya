@@ -315,7 +315,8 @@ published, never measured here** (no TypeSafe API access), so sample sizes and p
 | typed-decisions, 2,000 decisions | 0.727 | **0.766** | +0.039 |
 | AG News, 4 labels | 0.910 | **0.950** | +0.040 |
 | DAIR Emotion, 6 labels | 0.480 | **0.595** | +0.115 |
-| ECE *(lower better)* | 0.246 | **0.081** | 3× better |
+| Banking77 (72 vs 77 labels) | **0.870** | 0.425 | Jev leads on >20 options |
+| ECE *(lower better)* | 0.246 | **0.081** | 3× better (post-temperature) |
 | p50 latency, 1 question | 236–276 ms | **32.8 ms** | 7.8× faster |
 | Languages usable | *no published benchmark* | **45 of 51** | — |
 | Weights | closed API | **Apache 2.0** | — |
@@ -323,6 +324,12 @@ published, never measured here** (no TypeSafe API access), so sample sizes and p
 
 On DAIR Emotion, Jev assigned **zero probability to the true label on 16% of examples** — a hard
 failure for anything branching on confidence.
+
+#### Where Jev leads
+
+* **High-cardinality label spaces (>20 options):** On Banking77, Jev scores 0.870 (on 72 labels) while Laya scores 0.425 (on 77 labels). This is an architectural sequence-budget constraint: candidate options share a fixed `head_max_len` budget (192 to 256 tokens), so 77 options leave only ~3 to 4 tokens per label, causing text to become indistinguishable. Jev supports up to 255 options. If you have 50+ options in a single question, Jev handles it out-of-the-box; for Laya, split large option sets into a two-step coarse-to-fine hierarchy.
+* **Soft distribution matching:** On typed-decisions, while Laya achieves higher argmax accuracy (0.766 vs 0.727), Jev achieves higher soft accuracy (0.580 vs 0.471) against the teacher's full probability distributions.
+* **Out-of-the-box raw calibration:** Before temperature scaling, the base checkpoint has higher raw ECE (0.213 vs 0.144). Laya achieves its 0.081 ECE after domain temperature fitting.
 
 Full detail, including every workflow and all 51 languages: **[`BENCHMARKS.md`](BENCHMARKS.md)**.
 
