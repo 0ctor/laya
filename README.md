@@ -327,7 +327,7 @@ failure for anything branching on confidence.
 
 #### Where Jev leads
 
-* **High-cardinality label spaces (>20 options):** On Banking77, Jev scores 0.870 (on 72 labels) while Laya scores 0.425 (on 77 labels). This is an architectural sequence-budget constraint: candidate options share a fixed `head_max_len` budget (192 to 256 tokens), so 77 options leave only ~3 to 4 tokens per label, causing text to become indistinguishable. Jev supports up to 255 options. If you have 50+ options in a single question, Jev handles it out-of-the-box; for Laya, split large option sets into a two-step coarse-to-fine hierarchy.
+* **High-cardinality label spaces (>20 options at default settings):** On Banking77, Jev scores 0.870 (on 72 labels) while Laya scores 0.425 (on 77 labels at default 256-token head budget). This is an architectural token-budget constraint: options share a fixed `head_max_len` budget (192 tokens on English, 256 on multilingual), so 77 options receive only ~3 to 4 tokens per label, causing text to become indistinguishable. Jev supports up to 255 options out-of-the-box. While `laya-multilingual` supports 1,024 context (and up to 8,192 in the encoder) and you can raise `agent.cfg["head_max_len"] = 512` at runtime, Jev is currently better suited for 50+ options in a single prompt without tuning.
 * **Soft distribution matching:** On typed-decisions, while Laya achieves higher argmax accuracy (0.766 vs 0.727), Jev achieves higher soft accuracy (0.580 vs 0.471) against the teacher's full probability distributions.
 * **Out-of-the-box raw calibration:** Before temperature scaling, the base checkpoint has higher raw ECE (0.213 vs 0.144). Laya achieves its 0.081 ECE after domain temperature fitting.
 
@@ -397,11 +397,12 @@ temperatures at all, so fit them before relying on its probabilities.
   against a 0.318 random baseline and a 0.461 majority-class baseline. The 0.766 figure comes
   from the checkpoint fine-tuned on that benchmark's own training split. Laya is a fast base to
   specialise, not a zero-shot decision engine.
-* **Keep `choice` questions under ~20 options.** Every option is rendered into a fixed
-  `head_max_len` budget (192 tokens on `laya`, 256 on the others), so a 77-option question
-  leaves roughly 4 tokens per label and the option text stops being distinguishable —
-  accuracy falls off sharply. Split large label spaces into a coarse choice followed by a
-  fine one.
+* **High-cardinality choice questions and token budgets:** Sequences split into an option prompt budget (`head_max_len`) and the remaining document/state budget (`max_len - head_max_len`):
+  * `laya` (English) defaults to 512 context (`head_max_len = 192`, ~320 tokens for state).
+  * `laya-multilingual` and `laya-typed-decisions` default to 1,024 context (`head_max_len = 256`, ~768 tokens for state; mmBERT-base encoder supports up to 8,192 with RoPE).
+  At default settings, a 77-option question like Banking77 allocates only `(256 - 16) // 77` ≈ 3–4 tokens per label, which causes accuracy to fall off sharply (0.425 vs Jev's 0.870). If evaluating 50+ options in a single question:
+  1. Raise `agent.cfg["head_max_len"] = 512` and `agent.cfg["max_len"] = 1024` (or up to 2048 / 4096 / 8192) so every option has enough tokens to remain distinct.
+  2. Or split large option sets into a two-step coarse-to-fine hierarchical choice.
 * Ordinal `score` questions are the weakest primitive (SST-5 0.372).
 * `laya` collapses outside English; `laya-multilingual` is weaker on English. Route, or pick
   deliberately.
