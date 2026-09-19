@@ -32,11 +32,20 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pip-audit
-      - name: pip-audit
+      - name: Audit declared dependencies
         run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e .
-          pip-audit --strict --desc
+          # Audit what the package DECLARES, not a local install. Installing torch from the
+          # PyTorch CPU index yields a local version (2.14.0+cpu) that does not exist on PyPI,
+          # so pip-audit cannot resolve it and --strict fails the job on that alone.
+          python - <<'PY' > requirements-audit.txt
+          import re
+          src = open("pyproject.toml").read()
+          block = re.search(r"dependencies = \[(.*?)\]", src, re.S).group(1)
+          for dep in re.findall(r'"([^"]+)"', block):
+              print(dep)
+          PY
+          cat requirements-audit.txt
+          pip-audit --strict --desc -r requirements-audit.txt
 
   codeql:
     name: CodeQL
