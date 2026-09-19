@@ -258,19 +258,45 @@ question roughly **6-7x faster**.
 
 ### Against Jev, on identical public datasets
 
-Jev numbers are **published by third parties, not measured here** (no TypeSafe API access).
+Jev figures are **published by third parties, not measured here** (no TypeSafe API access).
 Sample sizes and prompts differ, so read these as indicative rather than a controlled
 head-to-head.
 
-| dataset | Jev | Laya | source for Jev |
+| dataset | Jev | Laya | |
 |---|---|---|---|
-| AG News (4 labels) | 0.910 | **0.947** | AbdelStark/jev-benchmarks |
-| DAIR Emotion (6) | 0.480 (Brier 0.846, NLL 5.588) | **0.573** | AbdelStark/jev-benchmarks |
-| typed-decisions (2,000 decisions) | 0.727 | **0.766** (fine-tuned) | laya-typed-decisions |
-| calibration (ECE) | 0.246 | **0.081** (after temperature fitting) | nibzard |
+| **typed-decisions** (2,000 decisions) | 0.727 | **0.766** | `laya-typed-decisions` |
+| AG News (4 labels) | 0.910 | **0.950** | `laya` |
+| DAIR Emotion (6 labels) | 0.480 · Brier 0.846 · NLL 5.588 | **0.595** | `laya`, held out |
+| calibration (ECE) | 0.246 | **0.081** | after temperature fitting |
 
-On DAIR Emotion, Jev assigned **zero probability to the true label on 16% of examples** -- a
+On DAIR Emotion, Jev assigned **zero probability to the true label on 16% of examples** — a
 hard failure for anything branching on confidence.
+
+### typed-decisions, measured on all three checkpoints
+
+400 cases, 2,000 decisions, four workflows.
+
+| model | accuracy | soft acc | Brier | ECE | score MAE |
+|---|---|---|---|---|---|
+| **`laya-typed-decisions`** | **0.766** | 0.471 | **0.062** | 0.213 | **0.242** |
+| `laya` | 0.362 | 0.332 | 0.316 | 0.175 | 0.694 |
+| `laya-multilingual` | 0.342 | 0.326 | 0.439 | 0.285 | 0.687 |
+| *Jev 1.13.0 (published)* | *0.727* | *0.580* | *0.148* | *0.144* | *0.391* |
+| *teacher self-agreement ceiling* | *0.735* | | | | |
+| *per-question majority class* | *0.461* | | | | |
+| *random guess* | *0.318* | | | | |
+
+The fine-tuned checkpoint beats Jev by 3.9 points and clears the teacher ceiling, with 2.4x
+better Brier and 1.6x better score MAE. It wins on all four workflows: invoice processing
+0.804, security incidents 0.766, customer service 0.764, agent-trace observability 0.730.
+By primitive: `noul` 0.857, `choice` 0.733, `score` 0.723.
+
+Two places it still trails Jev: **soft accuracy** (0.471 vs 0.580 — its argmax is better but
+its distributions match the teacher less well) and **ECE** (0.213 vs 0.144), which temperature
+fitting addresses.
+
+**The base checkpoints sit below the majority-class baseline** (0.362 and 0.342 against 0.461).
+All of the capability on this benchmark comes from fine-tuning.
 
 ### Multilingual (51 languages, MASSIVE intent, 20 options, random = 0.050)
 
@@ -310,6 +336,11 @@ temperatures at all, so fit them before relying on its probabilities.
   against a 0.318 random baseline and a 0.461 majority-class baseline. The 0.766 figure comes
   from the checkpoint fine-tuned on that benchmark's own training split. Laya is a fast base to
   specialise, not a zero-shot decision engine.
+* **Keep `choice` questions under ~20 options.** Every option is rendered into a fixed
+  `head_max_len` budget (192 tokens on `laya`, 256 on the others), so a 77-option question
+  leaves roughly 4 tokens per label and the option text stops being distinguishable —
+  accuracy falls off sharply. Split large label spaces into a coarse choice followed by a
+  fine one.
 * Ordinal `score` questions are the weakest primitive (SST-5 0.372).
 * `laya` collapses outside English; `laya-multilingual` is weaker on English. Route, or pick
   deliberately.
