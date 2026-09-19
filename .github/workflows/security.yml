@@ -30,7 +30,7 @@ jobs:
       # which commit put it there.
       - name: gitleaks (working tree)
         run: |
-          VER=8.28.0
+          VER=8.30.1
           curl -sSL -o gitleaks.tar.gz \
             "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz"
           tar -xzf gitleaks.tar.gz gitleaks
