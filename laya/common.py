@@ -18,17 +18,31 @@ def serialize_state(state: Union[str, dict, list]) -> str:
     return json.dumps(state, ensure_ascii=False)
 
 
+def render_criterion(value) -> str:
+    """Render one criterion value as text.
+
+    Strings pass through; anything structured (dict, list, number) becomes compact JSON, so a
+    rubric reads as JSON rather than a Python repr. Without this a dict-valued criterion
+    crashed `noul` outright and leaked `{'desc': ...}` into `choice` and `score` prompts.
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), default=str)
+
+
 def render_options(q: Dict) -> List[str]:
     """Render option texts in label-index order. Noul is always [false, true]."""
     t, crit = q["t"], q.get("crit")
     if t == "choice":
-        return [k if not v else "%s: %s" % (k, v) for k, v in crit.items()]
+        # only None/"" mean "no description"; 0 and False are legitimate criterion values
+        return [k if v is None or v == "" else "%s: %s" % (k, render_criterion(v)) for k, v in crit.items()]
     if t == "score":
-        return ["level %d: %s" % (i, c) for i, c in enumerate(crit)]
+        return ["level %d: %s" % (i, render_criterion(c)) for i, c in enumerate(crit)]
     crit = crit or {}
+    false_crit, true_crit = crit.get("false"), crit.get("true")
     return [
-        "false: " + (crit.get("false") or "no, the statement does not hold"),
-        "true: " + (crit.get("true") or "yes, the statement holds"),
+        "false: " + (render_criterion(false_crit) if false_crit not in (None, "") else "no, the statement does not hold"),
+        "true: " + (render_criterion(true_crit) if true_crit not in (None, "") else "yes, the statement holds"),
     ]
 
 

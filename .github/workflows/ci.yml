@@ -42,7 +42,9 @@ jobs:
         run: python -c "import laya; print(laya.__version__); print(sorted(laya.__all__))"
 
       - name: Routing and language-detection tests
-        run: python tests/test_router.py
+        run: |
+          python tests/test_router.py
+          python tests/test_criteria.py
 
   lint:
     name: lint

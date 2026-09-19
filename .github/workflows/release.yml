@@ -36,7 +36,9 @@ jobs:
           pip install -e .
 
       - name: Tests must pass before anything is published
-        run: python tests/test_router.py
+        run: |
+          python tests/test_router.py
+          python tests/test_criteria.py
 
       - name: Build
         run: python -m build
