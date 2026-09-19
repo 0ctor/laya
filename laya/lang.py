@@ -11,7 +11,6 @@ Script detection is exact. The Latin-script language guess is a stopword/diacrit
 is explicitly best-effort: pass an explicit model or `lang=` when you already know the language.
 """
 import re
-import unicodedata
 from typing import Dict, List, Optional, Union
 
 # Unicode blocks that the English (ModernBERT-large, 50k English BPE) checkpoint cannot read.

@@ -58,6 +58,21 @@ for label, text, want in [
     check("is_english/" + label, is_english(text), want)
 
 
+# --------------------------------------------------------------------- Latin language guess
+for label, text, want in [
+    ("english", "The customer was charged twice and wants a refund for this invoice", "en"),
+    ("french", "Le client a ete facture deux fois et il demande un remboursement pour la facture", "fr"),
+    ("german", "Der Kunde wurde zweimal belastet und moechte eine Rueckerstattung fuer die Rechnung", "de"),
+    ("spanish", "El cliente fue cobrado dos veces y quiere que le devuelvan el dinero por la factura", "es"),
+    ("too short", "refund", None),
+]:
+    check("latin_lang/" + label, guess_latin_language(text), want)
+# a non-English guess must never fire on ordinary English
+check("latin_lang/long english stays en",
+      guess_latin_language("Please refund the duplicate charge on invoice 4411 today because "
+                           "we have been waiting for three days and nobody has replied to us"), "en")
+
+
 # --------------------------------------------------------------------- state flattening
 check("state_text/dict", "charged twice" in state_text({"body": "charged twice", "n": 3}), True)
 check("state_text/nested", "deep" in state_text({"a": {"b": ["deep"]}}), True)

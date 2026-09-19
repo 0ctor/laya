@@ -1,0 +1,78 @@
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"     # Monday morning: catch CVEs disclosed since the last push
+
+# Read-only by default. Jobs that need more ask for it explicitly.
+permissions: read-all
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # gitleaks needs history to scan every commit in the PR
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  deps:
+    name: dependency CVEs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pip-audit
+      - name: pip-audit
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .
+          pip-audit --strict --desc
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+
+  supply_chain:
+    name: no unsafe deserialization
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Weights must load through safetensors, never pickle
+        run: |
+          # torch.load / pickle execute arbitrary code during deserialization. Laya loads
+          # checkpoints from the Hub, so a pickle path would be remote code execution on
+          # `laya.load("someone/their-model")`.
+          if grep -rnE "\bpickle\b|torch\.load\(|joblib\.load\(|yaml\.load\(" laya/; then
+            echo "::error::unsafe deserialization in the shipped package - use safetensors"
+            exit 1
+          fi
+          echo "OK: no pickle/torch.load/yaml.load in laya/"
+      - name: No shell-out or dynamic exec in the shipped package
+        run: |
+          if grep -rnE "os\.system\(|subprocess\.|shell=True|\beval\(|\bexec\(" laya/ \
+               | grep -v "\.eval()"; then
+            echo "::error::shell-out or dynamic execution in the shipped package"
+            exit 1
+          fi
+          echo "OK: no os.system/subprocess/eval/exec in laya/"
