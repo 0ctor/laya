@@ -5,14 +5,21 @@ Fast, non-autoregressive System 1 decision engine with mathematically calibrated
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing)
 [![PyPI version](https://img.shields.io/pypi/v/laya.svg)](https://pypi.org/project/laya/)
 [![Hugging Face Model](https://img.shields.io/badge/%F0%9F%A4%97%20Model-convaiinnovations%2Flaya-blue)](https://huggingface.co/convaiinnovations/laya)
+[![Multilingual](https://img.shields.io/badge/%F0%9F%A4%97%20Model-laya--multilingual-blue)](https://huggingface.co/convaiinnovations/laya-multilingual)
 [![Hugging Face Space](https://img.shields.io/badge/%F0%9F%A4%97%20Space-laya--demo-orange)](https://huggingface.co/spaces/convaiinnovations/laya-demo)
 [![Dev.to Article](https://img.shields.io/badge/dev.to-Read%20Article-0A0A0A?logo=devdotto&logoColor=white)](https://dev.to/nandakishor_m_6cc0adfde9f/i-built-non-autoregressive-decision-models-a-year-ago-then-a-frontier-lab-called-it-a-18me)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-nandakishorm-FFDD00?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/nandakishorm)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Laya lets you evaluate typed questions (`choice`, `score`, `noul`) over any state (text, email, ticket, or JSON document) in **a single forward pass (~33–38 ms on GPU)**. It produces structured decision outputs and calibrated confidence scores without text generation, token streaming, or hallucinations.
+Laya evaluates typed questions (`choice`, `score`, `noul`) over any state (text, email, ticket or JSON document) in **a single forward pass** — 33 ms for one question, 7.2 ms/question batched, measured on a T4. No text generation, so nothing to parse and nothing to hallucinate.
 
-Powered by the fine-tuned [Laya model on Hugging Face](https://huggingface.co/convaiinnovations/laya).
+Three checkpoints, and a `Router` that picks between them per request:
+
+| | encoder | params | context | use it for |
+|---|---|---|---|---|
+| [`laya`](https://huggingface.co/convaiinnovations/laya) | ModernBERT-large | 421M | 512 | English |
+| [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
+| [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
 ---
 
@@ -228,28 +235,84 @@ router.loaded              # ['multilingual']
 
 ---
 
-## Benchmark: Laya vs. TypeSafe Jev
+## Benchmarks
 
-<div align="center">
-  <img src="assets/benchmark_comparison.png" alt="Laya vs TypeSafe Jev Benchmark" width="900" />
-</div>
+All Laya numbers below are measured. Every model answered byte-identical questions
+(fixed seed) in the same run. Reproduce with
+[`notebooks/laya_benchmark_colab.ipynb`](https://github.com/NandhaKishorM/laya) on a T4.
 
-| Metric / Dimension | TypeSafe Jev (Published) | Laya (Fine-Tuned Checkpoint) | Analysis / Advantage |
+### Speed (Tesla T4, measured)
+
+| questions per call | `laya` | `laya-multilingual` |
+|---|---|---|
+| 1 | 39.5 ms | **32.8 ms** |
+| 5 | 84.5 ms | **40.1 ms** |
+| 10 | 158.6 ms (15.9 ms/q) | **72.3 ms (7.2 ms/q)** |
+| 50 | 771 ms | **337 ms (6.8 ms/q)** |
+
+Batched throughput reaches 103-332 questions/sec on a single T4. For reference, TypeSafe Jev
+has been independently measured at 236-276 ms p50
+([AbdelStark](https://github.com/AbdelStark/jev-benchmarks),
+[nibzard](https://github.com/nibzard/decision-model-benchmark)) -- Laya answers a single
+question roughly **6-7x faster**.
+
+### Against Jev, on identical public datasets
+
+Jev numbers are **published by third parties, not measured here** (no TypeSafe API access).
+Sample sizes and prompts differ, so read these as indicative rather than a controlled
+head-to-head.
+
+| dataset | Jev | Laya | source for Jev |
 |---|---|---|---|
-| **P50 Latency (1 Question)** | ~400 ms avg (70 to 500 ms, 150 ms best) | **38.4 ms** (p95: 42.1 ms) | **Laya is ~10.4x faster on avg (4x faster than Jev best-case)** |
-| **Batched Latency (10 Questions)** | ~1,500 ms (serial) / ~400 ms | **156.0 ms** (p95: 158.4 ms) | **Laya evaluates 10 questions in the time Jev answers 1** |
-| **Batched Latency (50 Questions)** | Multi-second / rate-limited | **721.4 ms** | High-throughput parallel mini-batching |
-| **Benchmark Accuracy** | **67.8%** (across 4 production workflows) | **83.8%** in-task macro accuracy | **Laya achieves +16.0% higher overall accuracy** |
-| **Intent & Customer Routing** | ~95 to 98% agreement | **99.1% accuracy** (ECE: 0.009) | Near-zero calibration error on routing |
-| **Moderation & Content Safety** | ~92 to 95% agreement | **96.7% accuracy** (ECE: 0.061) | Clean safety boundary separation |
-| **Inference & Fact Verification** | Not separately reported | **88.3% accuracy** (ECE: 0.054) | Full bidirectional attention captures contradictions |
-| **Instruction-Following Tasks** | Proprietary internal set | **87.8% in-task / 86.3% zero-shot** | Proven generalization across unseen tasks |
-| **Email Triage & Phishing** | Vendor custom workflow | **73.2% accuracy** (ECE: 0.017) | Tailored email cleaning & phishing filters |
-| **Selective Automation (@ 50% Cov)** | Claims human escalation | **92.2% accuracy** (ECE: 0.041) | Safe automated gating (confidence >= 0.85) |
-| **Model Weights & Code** | Closed-source / proprietary API | **100% Open-source Apache 2.0** | Full data sovereignty & transparency |
-| **Inference Cost** | $0.042 / 1M input tokens recurring | **$0.00 / self-hosted** | Runs on commodity GPUs, Mac MPS, or CPU |
-| **Multi-Turn Trajectory Modeling** | Static state snapshots | **TD(lambda = 1.0) prefix modeling** | Real temporal credit assignment |
-| **Deployment Mode** | Cloud-only egress | **Air-gapped / Local / On-Device** | Zero data egress (HIPAA/GDPR compliant) |
+| AG News (4 labels) | 0.910 | **0.947** | AbdelStark/jev-benchmarks |
+| DAIR Emotion (6) | 0.480 (Brier 0.846, NLL 5.588) | **0.573** | AbdelStark/jev-benchmarks |
+| typed-decisions (2,000 decisions) | 0.727 | **0.766** (fine-tuned) | laya-typed-decisions |
+| calibration (ECE) | 0.246 | **0.081** (after temperature fitting) | nibzard |
+
+On DAIR Emotion, Jev assigned **zero probability to the true label on 16% of examples** -- a
+hard failure for anything branching on confidence.
+
+### Multilingual (51 languages, MASSIVE intent, 20 options, random = 0.050)
+
+| | `laya` | `laya-multilingual` |
+|---|---|---|
+| English | **0.783** | 0.657 |
+| 13 other languages | 0.306 | **0.451** |
+| XNLI, English | **0.860** | 0.843 |
+| XNLI, 14 other languages | 0.521 | **0.731** |
+
+Across all 51 languages the English checkpoint macro-averages **0.227** with macro ECE
+**0.733**, and only 23 of 51 languages clear 3x random. Khmer scores **0.000 at 95.2%
+confidence**. This is why [`Router`](#model-routing-three-checkpoints-one-call) exists: the
+model's own confidence gives no warning, so the routing decision has to be made before the
+forward pass.
+
+### English tasks
+
+| task | `laya` | `laya-multilingual` | note |
+|---|---|---|---|
+| AG News | **0.947** | 0.937 | in training mix |
+| BoolQ | **0.830** | 0.787 | in training mix |
+| DAIR Emotion | **0.573** | 0.513 | held out |
+| prompt-injections | **0.698** | 0.578 | held out, n=116 |
+| SST-5 (ordinal) | 0.372 | 0.282 | held out |
+
+### Calibration
+
+Both checkpoints are over-confident as shipped. Refitting one temperature per (question type,
+option count) on held-out data moves mean ECE **0.466 -> 0.081** (`laya`) and
+**0.314 -> 0.106** (`laya-multilingual`). `laya-multilingual` ships with no fitted
+temperatures at all, so fit them before relying on its probabilities.
+
+### Honest limits
+
+* **The base checkpoints are near chance on typed-decisions zero-shot** -- 0.362 and 0.352
+  against a 0.318 random baseline and a 0.461 majority-class baseline. The 0.766 figure comes
+  from the checkpoint fine-tuned on that benchmark's own training split. Laya is a fast base to
+  specialise, not a zero-shot decision engine.
+* Ordinal `score` questions are the weakest primitive (SST-5 0.372).
+* `laya` collapses outside English; `laya-multilingual` is weaker on English. Route, or pick
+  deliberately.
 
 ---
 
@@ -261,11 +324,21 @@ router.loaded              # ['multilingual']
 
 ---
 
-## Fine-Tuning on Single T4 GPU (Google Colab)
+## Fine-Tuning
 
-Fine-tune Laya on your custom domain data or commercial datasets on a free T4 GPU:
+Fine-tune Laya on your own domain data. The notebook runs on Kaggle's free 2xT4 GPUs and does
+the whole loop: build the dataset, train with RLCD (proper-scoring-rule rewards, GRPO-style
+policy gradient), fit calibration temperatures, evaluate, and push the result to the Hub.
 
-* **Interactive Fine-Tuning Notebook:** [Fine-Tune on Custom Data](https://colab.research.google.com/drive/15d4Yv__KHeHjshVb-6PRTfqVllxih2S3?usp=sharing) ([`notebooks/laya_finetune_colab.ipynb`](notebooks/laya_finetune_colab.ipynb))
+* **[`notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb`](notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb)**
+
+Fine-tuning is where most of the value is. On the typed-decisions benchmark the base
+checkpoints score near chance zero-shot (0.36 and 0.35 against a 0.318 random baseline),
+while the fine-tuned checkpoint reaches **0.766** on the same 2,000 decisions -- above
+TypeSafe Jev's published 0.727 and above the 0.735 teacher self-agreement ceiling. Treat Laya
+as a fast base to specialise, not as a zero-shot decision engine.
+
+Runtime on 2xT4 is roughly 4-5 hours for 4 epochs over ~30k questions.
 
 ---
 
