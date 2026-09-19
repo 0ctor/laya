@@ -25,7 +25,7 @@ jobs:
 
       # The action above only scans the commits in this push or PR. That misses a secret that
       # entered on an earlier commit and is still sitting in the tree -- exactly how a CLI
-      # transcript quoting a PyPI token survived in main (removed in f0f4cf3). This second pass
+      # transcript quoting a PyPI token once survived in main. This second pass
       # scans the checked-out files themselves, so anything present in HEAD is caught no matter
       # which commit put it there.
       - name: gitleaks (working tree)
