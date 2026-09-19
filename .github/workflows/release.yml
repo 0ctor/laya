@@ -68,7 +68,12 @@ jobs:
         with:
           name: dist
           path: dist/
+      # Needs a Trusted Publisher on PyPI (Publishing -> add: owner NandhaKishorM,
+      # repo laya, workflow release.yml, environment pypi). Until that exists the
+      # exchange fails; skip-existing also makes a re-run safe after a manual upload.
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   github_release:
     needs: build
@@ -87,6 +92,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists - uploading artifacts to it"
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
