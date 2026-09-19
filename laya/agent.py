@@ -26,10 +26,20 @@ def _fix_tokenizer_config(path: str):
     try:
         with open(cfg_file) as f:
             tcfg = json.load(f)
+        changed = False
         if tcfg.get("tokenizer_class") in (None, "TokenizersBackend"):
             tcfg["tokenizer_class"] = "PreTrainedTokenizerFast"
             tcfg.pop("backend", None)
             tcfg.pop("is_local", None)
+            changed = True
+        # Checkpoints built on the mmBERT/Gemma tokenizer store extra_special_tokens as a list;
+        # transformers expects a mapping and raises "'list' object has no attribute 'keys'",
+        # which makes AutoTokenizer -- and so the whole model -- fail to load.
+        extra = tcfg.get("extra_special_tokens")
+        if isinstance(extra, list):
+            tcfg["extra_special_tokens"] = {"extra_%d" % i: t for i, t in enumerate(extra)}
+            changed = True
+        if changed:
             with open(cfg_file, "w") as f:
                 json.dump(tcfg, f, indent=2)
     except Exception:
@@ -154,6 +164,14 @@ class Agent:
         _verify_compatibility(self.model, self.cfg, weights, model_id_or_path)
 
         self.model.load_state_dict(weights, strict=True)
+
+        # ModernBERT's reference_compile defaults to "auto" and will torch.compile the encoder.
+        # That is a loss for the batch sizes Laya runs (a handful of questions per call) and can
+        # hang on some platforms, so keep the eager path.
+        try:
+            self.model.encoder.config.reference_compile = False
+        except Exception:
+            pass
 
         self.temperature = self.cfg.get("temperature", [1.0, 1.0, 1.0])
         self.temperature_by_options = self.cfg.get("temperature_by_options", {})

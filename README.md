@@ -130,6 +130,94 @@ triage = agent.predict({"message": "My payment failed twice"}, laya.triage_quest
 
 ---
 
+## Model Routing (three checkpoints, one call)
+
+Laya ships three checkpoints. `Router` picks the right one per request and loads it lazily.
+
+| name | repo | size | context | best at |
+|---|---|---|---|---|
+| `english` | [`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya) | 421M | 512 | English text |
+| `multilingual` | [`convaiinnovations/laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | 322M | 1024 | 100+ languages, 2x faster |
+| `typed-decisions` | [`convaiinnovations/laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | 421M | 1024 | the four typed-decisions workflows |
+
+```python
+from laya import Router
+
+router = Router()          # nothing is downloaded until a request needs it
+
+# English -> routed to the English checkpoint
+router.predict({"body": "I was charged twice, please refund."}, questions)
+
+# Hindi -> routed to the multilingual checkpoint automatically
+router.predict({"body": "\u092e\u0941\u091d\u0938\u0947 \u0926\u094b \u092c\u093e\u0930 \u0936\u0941\u0932\u094d\u0915 \u0932\u093f\u092f\u093e \u0917\u092f\u093e"}, questions)
+
+# explicit when you already know
+router.predict(state, questions, model="typed-decisions")
+router.predict(state, questions, lang="de")
+```
+
+Every result carries the decision that produced it:
+
+```python
+result = router.predict({"body": "\u4e8c\u91cd\u306b\u8acb\u6c42\u3055\u308c\u307e\u3057\u305f"}, questions)
+result["routing"]
+# {'model': 'multilingual',
+#  'repo': 'convaiinnovations/laya-multilingual',
+#  'reason': 'non-Latin script (kana, 100% of letters); the English checkpoint cannot read it',
+#  ...}
+```
+
+Inspect a decision without running the model:
+
+```python
+router.route({"body": "Der Kunde wurde zweimal belastet"}, questions).reason
+# "Latin script but language looks like 'de', not English"
+```
+
+### Why route at all
+
+Accuracy on a shared benchmark (17,416 questions, one T4, identical questions per model):
+
+| | `english` | `multilingual` |
+|---|---|---|
+| MASSIVE intent, English | **0.783** | 0.657 |
+| MASSIVE intent, 13 other languages | 0.306 | **0.451** |
+| XNLI, English | **0.860** | 0.843 |
+| XNLI, 14 other languages | 0.521 | **0.731** |
+| English-only suites | **0.684** | 0.619 |
+| Latency, 10 questions | 159 ms | **72 ms** |
+
+The English checkpoint does not degrade gracefully outside English -- it collapses, and stays
+confident while doing so. On 20-option MASSIVE intent (random = 0.050) it scores 0.100 on Hindi
+and 0.103 on Korean, with an expected calibration error of 0.855. Script detection is therefore
+the primary routing signal.
+
+### Routing rules
+
+Precedence, highest first:
+
+1. `model=` -- explicit checkpoint.
+2. `task="typed_decisions"` -- explicit task.
+3. A question-id set exactly matching a typed-decisions workflow, **only** if you construct the
+   router with `auto_task_detection=True`. It is off by default: that checkpoint is fine-tuned on
+   four synthetic workflows and should not be a silent fallback.
+4. `lang=` -- explicit language code.
+5. Detected script (exact) and, for Latin text, a stopword/diacritic language guess (best effort).
+6. `default=` (`"english"` unless you change it).
+
+### Memory
+
+All three together are ~1.16B parameters, so `Router` keeps **one** resident by default and
+evicts least-recently-used:
+
+```python
+Router(max_loaded=2)       # keep two hot
+router.unload()            # free everything
+router.loaded              # ['multilingual']
+```
+
+---
+
 ## Decision Primitives
 
 | Primitive | Output | Use Cases |
