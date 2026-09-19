@@ -156,7 +156,7 @@ router = Router()          # nothing is downloaded until a request needs it
 router.predict({"body": "I was charged twice, please refund."}, questions)
 
 # Hindi -> routed to the multilingual checkpoint automatically
-router.predict({"body": "\u092e\u0941\u091d\u0938\u0947 \u0926\u094b \u092c\u093e\u0930 \u0936\u0941\u0932\u094d\u0915 \u0932\u093f\u092f\u093e \u0917\u092f\u093e"}, questions)
+router.predict({"body": "मुझसे दो बार शुल्क लिया गया"}, questions)
 
 # explicit when you already know
 router.predict(state, questions, model="typed-decisions")
@@ -166,7 +166,7 @@ router.predict(state, questions, lang="de")
 Every result carries the decision that produced it:
 
 ```python
-result = router.predict({"body": "\u4e8c\u91cd\u306b\u8acb\u6c42\u3055\u308c\u307e\u3057\u305f"}, questions)
+result = router.predict({"body": "二重に請求されました"}, questions)
 result["routing"]
 # {'model': 'multilingual',
 #  'repo': 'convaiinnovations/laya-multilingual',
