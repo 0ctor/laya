@@ -121,10 +121,15 @@ class Agent:
                 )
             from huggingface_hub import snapshot_download
 
-            kw = {"token": token or os.environ.get("HF_TOKEN")}
-            if subfolder:
-                # fetch only the requested checkpoint, not every checkpoint in the repo
-                kw["allow_patterns"] = [f"{subfolder}/*"]
+            # Restrict root checkpoints too: the default repo also contains sibling
+            # checkpoints, which an unfiltered snapshot would unnecessarily download.
+            prefix = f"{subfolder}/" if subfolder else ""
+            kw = {
+                "token": token or os.environ.get("HF_TOKEN"),
+                "allow_patterns": [prefix + name for name in (
+                    "rl_agent_config.json", "model.safetensors", "tokenizer/*", "encoder/*",
+                )],
+            }
             model_dir = snapshot_download(model_id_or_path, **kw)
 
         if subfolder:
