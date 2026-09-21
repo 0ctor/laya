@@ -46,6 +46,7 @@ jobs:
           python tests/test_router.py
           python tests/test_criteria.py
           python tests/test_download.py
+          python tests/test_shortlist.py
 
       - name: Email cleaning tests
         run: python tests/test_email.py
