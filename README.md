@@ -34,6 +34,16 @@ Three checkpoints, and a `Router` that picks between them per request:
 | [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
 | [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
+### What's new in 0.3.11
+
+* **Routed batches.** `Router.predict_batch(requests)` routes each request, groups them by checkpoint and question set, and scores each group in shared forward passes, with answers identical to one `predict` call per request. Each request can set its own `model`, `task`, `lang` or `lang_guess`. See [Heterogeneous routed batches](#heterogeneous-routed-batches).
+* **Prediction hooks.** Opt-in hooks run around every decision on `Agent`, `Router` and `ONNXAgent`, to audit, trace, redact, cache or gate results. With no hooks set, answers are identical to before. See [Prediction Hooks](#prediction-hooks).
+* **transformers 4.x and Apple GPUs.** Checkpoints re-saved by transformers 5 now load with the right RoPE settings on transformers 4.x, and `predict()` no longer crashes on MPS builds without an autocast backend.
+* **Stricter `noul` questions.** A `noul` `criteria` dict keyed anything other than `true`/`false` is now rejected with a clear message instead of being silently replaced by the defaults. Use `labels` to change the wording.
+* **Safer HTTP server.** Timing-safe API key checks, request size and question limits (413), a 400 for malformed JSON, errors that do not leak paths, and a validated port. Docker Compose binds `laya-serve` to loopback by default and adds a healthcheck.
+* **More hardware and docs.** Native ARM64 and DGX Spark container builds, a documentation site built from `docs/`, and a local web GUI demo under `examples/`.
+* **Smaller fixes.** Plain-ASCII German routes to the multilingual checkpoint, very large e-mails and states are bounded before regex work, `ONNXAgent` validates questions like `Agent`, an empty `HF_TOKEN` no longer breaks downloads, the tokenizer config is written atomically, and the `langchain` extra installs `langgraph`.
+
 ### What's new in 0.3.10
 
 0.3.10 changes only this README; its code is the same as 0.3.9. Everything below is new since 0.3.6. `pip install -U laya` for all of it; the checkpoints are unchanged.
