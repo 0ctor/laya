@@ -349,7 +349,8 @@ for label, state, segment in [
      {"subject": "New ticket from the web form", "body": "Quero cancelar meu plano"},
      "Quero cancelar meu plano"),
     ("parenthesis in prose is not code",
-     {"subject": "Urgent: production is down for all customers since the last deploy",
+     {"subject": "Urgent: production is down for all customers since the last deploy and the "
+                 "status page is red for the whole region",
       "body": "Deu erro (500) no login, alguém pode ver isso agora?"},
      "Deu erro (500) no login, alguém pode ver isso agora?"),
 ]:
