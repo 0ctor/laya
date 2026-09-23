@@ -7,7 +7,7 @@ Laya provides fast (~33 ms), non-autoregressive decision components for **LangCh
 * **`LayaTriage`**: Support ticket triage node evaluating intent, urgency, frustration, and churn risk in one forward pass.
 * **`LayaEvaluator`**: Rubric-based output grading and hallucination evaluation.
 
-Supports both **local in-process inference** (`Agent` or `Router`) and **remote HTTP inference** (`laya-serve` or hosted API) without requiring PyTorch on edge clients.
+Supports both **local in-process inference** (`Agent` or `Router`) and **remote HTTP inference** against your own `laya-serve` without requiring PyTorch on edge clients.
 
 ---
 

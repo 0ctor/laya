@@ -40,7 +40,7 @@ from typing import Any, Dict, Optional
 # Jev model id (ignore it and let the router auto-select).
 _KNOWN_MODELS = {"english", "multilingual", "typed-decisions"}
 
-# Public Hugging Face ids accepted by the hosted API. The root bundle is
+# Public Hugging Face ids, accepted so a client can name a checkpoint. The root bundle is
 # deliberately absent: the documented ``convaiinnovations/laya`` value means
 # "let the Router choose", rather than pinning the English checkpoint.
 _PUBLISHED_MODEL_IDS = {

@@ -84,8 +84,7 @@ print(f"Churn Risk: {enriched_state['triage']['churn_risk']}")
 # =====================================================================
 # 4. Remote HTTP Server Mode (No Local PyTorch / GPU Required)
 # =====================================================================
-# You can connect to a self-hosted `laya-serve` or the hosted API endpoint
-# by providing `base_url`:
+# You can connect to your own self-hosted `laya-serve` by providing `base_url`:
 #
 # remote_router = LayaRouter(
 #     base_url="http://localhost:8000",
