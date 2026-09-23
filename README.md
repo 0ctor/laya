@@ -100,7 +100,6 @@ Continue with the [Router quickstart](#quickstart-route-mode-recommended) to run
 Laya ships three checkpoints. The built-in **`Router`** is the recommended entry point: it evaluates any state in any language, automatically detects scripts and languages in sub-milliseconds, and dispatches to the optimal checkpoint in a single forward pass.
 
 ```python
-import laya
 from laya import Router
 
 # Preload checkpoints into memory for instant sub-35ms routing
