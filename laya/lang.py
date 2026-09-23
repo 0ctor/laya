@@ -138,8 +138,9 @@ _STOP = {
            "shomossa", "somossa", "dhonnobad", "bhai", "shob", "keu", "kichu", "bolte", "bolun",
            "parben", "asbe", "jabe", "pabo", "ferot", "dorkar", "hoye", "geche", "gese"},
 
-    # "her", "ne", "men", "de" collide with English, French and Romanian, so they are left out.
-    "az": {"və", "ve", "bir", "bu", "ki", "üçün", "ucun", "ilə", "ile", "olan", "olub", "olmasa",
+    # "her", "ne", "men", "de" collide with English, French and Romanian, and "ki" with the
+    # romanized Bangla list, so they are left out.
+    "az": {"və", "ve", "bir", "bu", "üçün", "ucun", "ilə", "ile", "olan", "olub", "olmasa",
            "var", "yox", "yoxdur", "mən", "sən", "biz", "siz", "onlar", "daha", "çox", "cox",
            "hər", "nə", "kimi", "görə", "sonra", "əgər", "eger", "deyil", "lakin", "amma",
            "ancaq", "artıq", "artiq", "də", "isə", "həm", "yalnız", "yalniz"},
