@@ -126,6 +126,13 @@ _SHARED_WORDS = {w for w in {word for words in _STOP.values() for word in words}
                  if sum(w in words for words in _STOP.values()) > 1}
 
 _WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
+# A token whose dot or @ joins word characters is an identifier, not prose: `github.com`,
+# `user@acme.com`, `v1.2.3`, `U.S.A.`. `_WORD` splits them into pieces that collide with real
+# function words -- `com` is Portuguese for "with", `o` is its article, `e` is Italian "e" -- so a
+# state that was mostly links scored a language it does not contain, and two domains were enough to
+# cross the margin below. A sentence-final period (`arrivato.`) keeps its word: the pattern needs
+# word characters on both sides of the dot.
+_IDENTIFIER = re.compile(r"[\w-]*(?:[.@][\w-]+)+", re.UNICODE)
 
 
 def _iter_text(state: Union[str, dict, list, None], _depth: int = 0) -> List[str]:
@@ -210,7 +217,7 @@ def latin_profile(text: str) -> Dict[str, object]:
     A non-English language is only named when it matched at least one word that no other list
     claims: shared function words alone (`la`, `e`, `o`) identify no particular language.
     """
-    words = [w.lower() for w in _WORD.findall(text)]
+    words = [w.lower() for w in _WORD.findall(_IDENTIFIER.sub(" ", text))]
     lowered = text.lower()
     diac = sum(1 for ch in lowered if ch in _NON_EN_DIACRITICS)
     diac_rate = diac / max(1, len(lowered))
