@@ -31,7 +31,8 @@ import gc
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional, Union
+from collections.abc import Sequence as SequenceABC
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from .hooks import HookRegistry, PredictContext, aggregate_usage, dispatch, normalise_hooks
 from .lang import analyse
@@ -562,6 +563,134 @@ class Router(HookRegistry):
         return False
 
     system_one = predict
+
+    def route_batch(self, requests: Sequence[Dict[str, Any]]) -> List[RouteDecision]:
+        """Route a heterogeneous request batch without loading any checkpoints.
+
+        Each request is a mapping with ``state`` and ``questions`` plus the same optional
+        routing overrides accepted by :meth:`route`: ``model``, ``task``, ``lang`` and
+        ``lang_guess``. The returned decisions preserve input order.
+
+        This is intentionally separate from inference so callers can inspect or aggregate
+        routing decisions before paying model-load cost.
+        """
+        if not isinstance(requests, SequenceABC) or isinstance(requests, (str, bytes)):
+            raise TypeError("requests must be a sequence of request dictionaries")
+
+        decisions: List[RouteDecision] = []
+        for i, request in enumerate(requests):
+            if not isinstance(request, dict):
+                raise TypeError("request %d must be a dict, got %s" % (i, type(request).__name__))
+            if "state" not in request:
+                raise ValueError("request %d is missing required key 'state'" % i)
+            if "questions" not in request:
+                raise ValueError("request %d is missing required key 'questions'" % i)
+
+            questions = request["questions"]
+            if not isinstance(questions, dict):
+                raise TypeError(
+                    "request %d 'questions' must be a dict, got %s"
+                    % (i, type(questions).__name__)
+                )
+
+            decisions.append(
+                self.route(
+                    request["state"],
+                    questions,
+                    model=request.get("model"),
+                    task=request.get("task"),
+                    lang=request.get("lang"),
+                    lang_guess=request.get("lang_guess"),
+                )
+            )
+
+        return decisions
+
+    def predict_batch(
+        self,
+        requests: Sequence[Dict[str, Any]],
+        batch_size: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Route and execute a heterogeneous request batch with minimal model churn.
+
+        Requests are routed first and grouped by checkpoint. Within each checkpoint,
+        requests that share the same question schema are passed to
+        ``Agent.predict_batch`` so their states can share forward passes. Results are
+        then restored to the original request order.
+
+        Requests may independently specify ``model``, ``task``, ``lang`` or
+        ``lang_guess`` and may use different question schemas.
+
+        Args:
+            requests: Sequence of request dictionaries. Every item requires ``state`` and
+                ``questions`` and may include ``model``, ``task``, ``lang`` or
+                ``lang_guess`` overrides.
+            batch_size: Optional maximum number of states per Agent forward-pass batch.
+
+        Returns:
+            One normal Router prediction result per request, in the same order as the input.
+        """
+        decisions = self.route_batch(requests)
+        if not decisions:
+            return []
+
+        # Dict insertion order preserves the order in which model groups first appear. This
+        # keeps cache effects deterministic while collapsing an arbitrarily interleaved
+        # workload to at most one load per routed checkpoint for this call.
+        groups: Dict[str, List[int]] = {}
+        for i, decision in enumerate(decisions):
+            groups.setdefault(decision.model, []).append(i)
+
+        results: List[Optional[Dict[str, Any]]] = [None] * len(requests)
+
+        for model_name, indices in groups.items():
+            agent = self.load(model_name)
+
+            # Agent.predict_batch evaluates one shared question schema over many states.
+            # Preserve Router's heterogeneous-request API by splitting each checkpoint
+            # group again whenever the question dictionaries differ.
+            question_groups: List[Dict[str, Any]] = []
+            for i in indices:
+                questions = requests[i]["questions"]
+
+                for group in question_groups:
+                    if group["questions"] == questions:
+                        group["indices"].append(i)
+                        break
+                else:
+                    question_groups.append({
+                        "questions": questions,
+                        "indices": [i],
+                    })
+
+            for group in question_groups:
+                group_indices = group["indices"]
+                states = [requests[i]["state"] for i in group_indices]
+
+                batch_results = agent.predict_batch(
+                    states,
+                    group["questions"],
+                    batch_size=batch_size,
+                )
+
+                if len(batch_results) != len(group_indices):
+                    raise RuntimeError(
+                        "internal error: Agent.predict_batch returned %d results for %d states"
+                        % (len(batch_results), len(group_indices))
+                    )
+
+                for i, result in zip(group_indices, batch_results):
+                    result["routing"] = dict(decisions[i])
+                    results[i] = result
+
+        # Every input index is assigned exactly once by construction. Keep this assertion local
+        # so a future refactor cannot silently return a partially-filled batch.
+        if any(result is None for result in results):
+            raise RuntimeError("internal error: batch execution did not produce every result")
+
+        return [result for result in results if result is not None]
+
+    predict_many = predict_batch
 
     def __repr__(self):
         return "Router(loaded=%s, max_loaded=%d, default=%r)" % (self.loaded, self.max_loaded, self.default)

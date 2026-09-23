@@ -246,6 +246,31 @@ router.route({"body": "Esqueci minha senha"}).model                 # -> multili
 router.route({"body": "Please refund the duplicate charge"}).model  # -> english
 ```
 
+### Heterogeneous routed batches
+
+If a lazy router receives an interleaved workload whose requests route to different checkpoints, calling `predict()` in a loop can still cause unnecessary checkpoint churn when the required checkpoints exceed the resident cache, for example with `max_loaded=1` or when `typed-decisions` is also used.
+
+`Router.predict_batch()` routes the full workload first, groups requests by checkpoint, then groups requests with the same question schema within each checkpoint. Each compatible group is dispatched to `Agent.predict_batch()` so states can share forward passes, and results are restored to the original request order.
+
+```python
+requests = [
+    {"state": "Please refund invoice 1", "questions": questions},
+    {"state": "تم خصم المبلغ مرتين", "questions": questions},
+    {"state": "Please refund invoice 2", "questions": questions},
+]
+
+results = Router(max_loaded=1).predict_batch(requests)
+# results stay in input order while compatible requests are batched by checkpoint
+```
+Each item can independently set `model`, `task`, `lang`, or `lang_guess`. Use `route_batch(requests)` when you only want the ordered routing decisions without loading any checkpoint. `predict_many` is an alias for `predict_batch`.
+
+Requests are validated before model loading. Different requests may use different question schemas; requests sharing both a checkpoint and question schema are passed together to `Agent.predict_batch()`.
+
+You can also bound the Agent-level forward-pass batch size:
+```python
+results = router.predict_batch(requests, batch_size=8)
+```
+
 ### Why Route: The Evidence
 
 On a shared benchmark (17,416 questions, one T4 GPU, identical questions per model):
