@@ -93,7 +93,7 @@ check("latin/diacritic rate reported", analyse("Gătește-mi o rețetă de sarma
 check("latin/english has no diacritics", analyse("Please refund the duplicate charge today")["diacritic_rate"], 0.0)
 # every branch of analyse() reports the same keys, so a caller can read one without guarding
 _KEYS = {"script", "script_profile", "language", "is_english", "language_undecided",
-         "diacritic_rate", "non_latin_fraction"}
+         "diacritic_rate", "non_latin_fraction", "mixed_segment"}
 for label, text in [("english", "Please refund the duplicate charge"), ("hindi", "ग्राहक से दो बार"),
                     ("romanian", "Gătește-mi o rețetă de sarmale"), ("no letters", "12345 ???")]:
     check("analyse/keys " + label, set(analyse(text)), _KEYS)
@@ -326,6 +326,54 @@ for text in ["Please refund the duplicate charge", "Please refund the duplicate 
     check("route/identified english ignores default " + text[:24], _r_ml.route(text).model, "english")
 check("route/english reason unchanged",
       _r_lat.route("Please refund the duplicate charge on invoice 4411 today.").reason, "English Latin text")
+
+
+# --------------------------------------------------------------------- mixed states
+# A Portuguese ticket carrying an English stack trace, error payload or form template read as English
+# as a whole -- the English part is longer -- and went to the checkpoint that cannot read the
+# customer's own words. Any line or field that on its own is named a non-English language now wins.
+_TRACE = ("O sistema caiu de novo hoje de manhã, segue o log:\n"
+          "Traceback (most recent call last):\n"
+          "  File \"/app/main.py\", line 42, in handler\n"
+          "    return self.process(request)\n"
+          "ConnectionError: the connection to the database was refused because the pool is "
+          "exhausted and there is no available slot for this request")
+for label, state, segment in [
+    ("portuguese ticket + english traceback", _TRACE, "O sistema caiu de novo hoje de manhã, segue o log:"),
+    ("portuguese field + english error payload",
+     {"descricao": "O pagamento não foi processado",
+      "error": {"code": "card_declined", "message": "Your card was declined. Please try again with a "
+                "different card or contact your bank for more information."}},
+     "O pagamento não foi processado"),
+    ("english form template + portuguese body",
+     {"subject": "New ticket from the web form", "body": "Quero cancelar meu plano"},
+     "Quero cancelar meu plano"),
+    ("parenthesis in prose is not code",
+     {"subject": "Urgent: production is down for all customers since the last deploy",
+      "body": "Deu erro (500) no login, alguém pode ver isso agora?"},
+     "Deu erro (500) no login, alguém pode ver isso agora?"),
+]:
+    check("mixed/is not english: " + label, is_english(state), False)
+    check("mixed/segment reported: " + label, analyse(state)["mixed_segment"], segment)
+    check("mixed/routes multilingual: " + label, _r_lat.route(state).model, "multilingual")
+check("mixed/reason names the segment",
+      "a line or field reads as 'pt'" in _r_lat.route(_TRACE).reason, True)
+# English stays English: several English lines, a short foreign sign-off, and code pasted into a request
+# (`os.path` reads as Portuguese, `round(el, 2)` as Spanish, `np.mean(na)` as Portuguese)
+for label, state in [
+    ("multi-line english", "Hi team,\nThe export failed again last night.\nCan you check the logs?\nThanks"),
+    ("short portuguese sign-off", "Please resend the invoice for March, the amount is wrong.\nAtenciosamente, Joao"),
+    ("os.path", "The build broke after the refactor.\nREPO = os.path.dirname(os.path.dirname(__file__))\n"
+                "Please take a look at the import paths when you can."),
+    ("round(el)", "The latency script crashes on large runs.\nmix[key] = {\"total_s\": round(el, 2)}\n"
+                  "Can you check why the stream is empty?"),
+    ("np.mean(na)", "The summary is wrong for empty suites.\nif na: non[m] = round(float(np.mean(na)), 4)\n"
+                    "Please guard the empty case."),
+    ("english json", {"status": "open", "priority": "high",
+                      "message": "The customer was charged twice and wants a refund"}),
+]:
+    check("mixed/english stays english: " + label, is_english(state), True)
+    check("mixed/no segment: " + label, analyse(state)["mixed_segment"], None)
 
 
 # --------------------------------------------------------------------- plain-ASCII Romance (#172)

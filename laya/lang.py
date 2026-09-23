@@ -380,11 +380,45 @@ def guess_latin_language(text: str) -> Optional[str]:
     return latin_profile(text)["language"]
 
 
+# Code is not prose in any language, but split into words it reads as one: `os.path` is Portuguese
+# (`os`), `round(el, 2)` Spanish (`el`), `non_english` Italian (`non`). A line pasted from a program
+# into an English request must not count as a foreign segment, so a line carrying code syntax --
+# `=`, `;`, braces, brackets or a call `name(` -- is skipped, and dotted or underscored identifiers
+# are dropped from the rest. Prose keeps "Deu erro (500)": the parenthesis follows a space.
+_CODE_LINE = re.compile(r"[=;{}\[\]]|\w\(")
+_IDENTIFIER = re.compile(r"\w+(?:[._]\w+)+")
+
+
+def _non_english_segment(state: Union[str, dict, list, None], max_chars: int = 4000):
+    """First line or field that, read on its own, is named a non-English language, else None.
+
+    Returns (language, segment). A segment needs the same evidence a whole state does -- at least
+    four words, and a language named by `latin_profile` -- so this adds no new way to call English
+    text foreign; it only stops a longer English part from outvoting it.
+    """
+    seen = 0
+    for leaf in _iter_text(state):
+        for seg in leaf.split("\n"):
+            if seen >= max_chars:
+                return None
+            seen += len(seg)
+            if _CODE_LINE.search(seg):
+                continue
+            prose = _IDENTIFIER.sub(" ", seg)
+            if len(_WORD.findall(prose)) < 4:
+                continue
+            lang = latin_profile(prose)["language"]
+            if lang not in (None, "en"):
+                return lang, seg.strip()
+    return None
+
+
 def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     """Full detection result for a state.
 
     Returns `script`, `script_profile`, `language` (best effort, may be None),
-    `is_english` and `non_latin_fraction`.
+    `is_english`, `non_latin_fraction` and `mixed_segment` (the line or field that made a mostly
+    English state non-English, else None).
     """
     text = state_text(state)
     prof = script_profile(text)
@@ -398,11 +432,11 @@ def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     if script == "unknown":
         return {"script": "unknown", "script_profile": prof, "language": None,
                 "is_english": True, "language_undecided": True, "diacritic_rate": 0.0,
-                "non_latin_fraction": 0.0}
+                "non_latin_fraction": 0.0, "mixed_segment": None}
     if script != "latin":
         return {"script": script, "script_profile": prof, "language": None,
                 "is_english": False, "language_undecided": True, "diacritic_rate": 0.0,
-                "non_latin_fraction": non_latin}
+                "non_latin_fraction": non_latin, "mixed_segment": None}
     prof_lat = latin_profile(text)
     lang = prof_lat["language"]
     # Undecided is not English. Treating it as English sent every Latin-script language we hold no
@@ -411,10 +445,23 @@ def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     # such letters (including short English) still goes to the English one.
     undecided = lang is None
     english = lang == "en" or (undecided and not prof_lat["looks_non_english"])
+    # A Portuguese ticket with an English stack trace, error payload or form template reads as
+    # English as a whole, because the English part is longer -- yet the part a question is about is
+    # the customer's, and the English checkpoint cannot read it (0.97 confidence at 0.47 accuracy on
+    # `pt`). The cost is lopsided: English sent to multilingual loses a few points, the reverse loses
+    # calibration. So a state that would go to English is checked line by line and field by field.
+    mixed = None
+    leaves = _iter_text(state)
+    # a single line has no other part to be outvoted by, and was just read whole
+    if english and (len(leaves) > 1 or any("\n" in leaf for leaf in leaves)):
+        found = _non_english_segment(state)
+        if found:
+            lang, mixed = found
+            english, undecided = False, False
     return {"script": "latin", "script_profile": prof, "language": lang,
             "is_english": english, "language_undecided": undecided,
             "diacritic_rate": round(float(prof_lat["diacritic_rate"]), 4),
-            "non_latin_fraction": non_latin}
+            "non_latin_fraction": non_latin, "mixed_segment": mixed}
 
 
 def is_english(state: Union[str, dict, list, None]) -> bool:

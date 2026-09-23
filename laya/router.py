@@ -478,7 +478,10 @@ class Router(HookRegistry):
                 det["script"], 100 * float(det["non_latin_fraction"]))
         elif not det["is_english"]:
             key = "multilingual"
-            if det["language"]:
+            if det.get("mixed_segment"):
+                reason = ("Latin script, mostly English, but a line or field reads as %r (%r); "
+                          "the English checkpoint cannot read it" % (det["language"], det["mixed_segment"][:60]))
+            elif det["language"]:
                 reason = "Latin script but language looks like %r, not English" % det["language"]
             else:
                 # Unidentified Latin-script language: routed on the non-English letters alone,
