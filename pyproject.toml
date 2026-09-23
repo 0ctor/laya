@@ -53,6 +53,11 @@ onnx = ["onnx", "onnxruntime"]
 # `pip install laya[langchain]` adds the LangChain / LangGraph integrations (laya.integrations).
 langchain = [
     "langchain-core>=0.2.0",
+    "langgraph>=0.1.0",
+]
+langgraph = [
+    "langchain-core>=0.2.0",
+    "langgraph>=0.1.0",
 ]
 
 [project.scripts]
