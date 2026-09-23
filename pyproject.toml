@@ -42,10 +42,14 @@ serve = [
     "fastapi>=0.110.0",
     "uvicorn>=0.27.0",
 ]
+# `pip install laya[fast]` adds the TileLang GPU fast path (laya/fast.py); everything else works without it.
+fast = ["tilelang>=0.1.14"]
+
 # `pip install laya[mcp]` adds the MCP stdio server (laya.mcp / the laya-mcp-server CLI).
 mcp = ["mcp>=2.2.0"]
 
 [project.scripts]
+laya = "laya.cli:main"
 laya-serve = "laya.serve:main"
 laya-mcp-server = "laya.mcp.server:main"
 
