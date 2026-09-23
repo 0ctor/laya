@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import warnings
 from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Union
@@ -24,6 +25,7 @@ from .common import (
     render_options,
     temp_bucket,
 )
+from .hooks import HookRegistry, PredictContext, aggregate_usage, dispatch, normalise_hooks
 
 
 def _fix_tokenizer_config(path: str):
@@ -177,8 +179,15 @@ def _amp_context(device, dtype):
     return nullcontext()
 
 
-class Agent:
+class Agent(HookRegistry):
     """System 1 decision model runtime: fast, non-autoregressive, calibrated decisions."""
+
+    # Hooks are opt-in. `hooks`/`_hooks_mutex` defaults come from HookRegistry; the rest keep a
+    # hand-built instance (`Agent.__new__` in tests) working and make an unset hook a no-op.
+    hooks_raise = True
+    hooks_concurrent = True
+    _hooks_lock = None
+    model_id = None
 
     def __init__(
         self,
@@ -188,6 +197,11 @@ class Agent:
         subfolder: Optional[str] = None,
         fast: bool = False,
         compile: bool = False,
+        hooks=None,
+        on_predict_start=None,
+        on_predict_end=None,
+        hooks_raise: bool = True,
+        hooks_concurrent: bool = True,
     ):
         """Load a Laya checkpoint.
 
@@ -197,7 +211,18 @@ class Agent:
         `subfolder` selects one checkpoint from a repo that bundles several, e.g.
         `Agent("convaiinnovations/laya", subfolder="multilingual")`. Only that subfolder is
         downloaded, so bundling does not cost every user the whole family.
+
+        `hooks` / `on_predict_start` / `on_predict_end` observe or shape every prediction; see
+        `laya.hooks`. `hooks_raise=False` warns and continues when a hook fails, and
+        `hooks_concurrent=False` serialises hooks that are not safe to run in parallel.
         """
+        self.hooks = normalise_hooks(hooks, on_predict_start, on_predict_end)
+        self.hooks_raise = bool(hooks_raise)
+        self.hooks_concurrent = bool(hooks_concurrent)
+        self._hooks_lock = threading.RLock() if not hooks_concurrent else None
+        self._hooks_mutex = threading.Lock()
+        self.model_id = model_id_or_path
+
         from safetensors.torch import load_file
         try:
             from transformers.initialization import no_init_weights
@@ -478,10 +503,15 @@ class Agent:
             q["labels"] = qdef["labels"]
         return q
 
-    def _encode_state(self, state: Union[str, dict, list], ids: List[str], internal: Dict[str, Dict]) -> List[Dict]:
-        """Tokenize one state against every (already validated + normalized) question."""
-        max_len = self.cfg.get("max_len", 512)
-        head_max_len = self.cfg.get("head_max_len", 192)
+    def _encode_state(self, state: Union[str, dict, list], ids: List[str], internal: Dict[str, Dict],
+                      max_len: Optional[int] = None, head_max_len: Optional[int] = None) -> List[Dict]:
+        """Tokenize one state against every (already validated + normalized) question.
+
+        `max_len` / `head_max_len` override the agent config for this call (a start hook may set
+        `ctx.max_len` / `ctx.head_max_len`).
+        """
+        max_len = self.cfg.get("max_len", 512) if max_len is None else max_len
+        head_max_len = self.cfg.get("head_max_len", 192) if head_max_len is None else head_max_len
         # A chronological conversation list is serialized newest-last, so the default
         # right-truncation (st[:room]) would silently drop the newest turn. Truncate
         # from the left for lists so the most recent intent is preserved.
@@ -569,7 +599,11 @@ class Agent:
 
     @torch.no_grad()
     def predict_batch(self, states: List[Union[str, dict, list]], questions: Dict[str, Dict[str, Any]],
-                      batch_size: Optional[int] = None) -> List[Dict[str, Any]]:
+                      batch_size: Optional[int] = None, hooks=None,
+                      on_predict_start=None, on_predict_end=None,
+                      hooks_raise: Optional[bool] = None,
+                      max_len: Optional[int] = None,
+                      head_max_len: Optional[int] = None) -> List[Dict[str, Any]]:
         """Evaluate the same questions over many states, packing them into shared forward passes.
 
         This is the throughput path. `system_one`/`predict` handle one state per forward pass; on a
@@ -583,56 +617,106 @@ class Agent:
             questions: Question definitions, exactly as accepted by `system_one`.
             batch_size: Optional cap on states per forward pass. `None` sends them all in one pass;
                         set it to bound peak memory when batching many or long states.
+            hooks, on_predict_start, on_predict_end: Per-call hooks, appended after any installed on
+                    the Agent. `on_predict_start` may rewrite the state/questions or call
+                    `ctx.skip(...)` to short-circuit inference; `on_predict_end` may rewrite the
+                    results. See `laya.hooks`.
+            hooks_raise: Override the Agent's `hooks_raise` for this call.
+            max_len, head_max_len: Override the agent config for this call. A start hook may also
+                    set `ctx.max_len` / `ctx.head_max_len` to shape the token budget.
 
         Returns:
             A list of per-state result dicts, each identical in shape to `system_one`'s output and
             aligned with `states` by index.
         """
-        if isinstance(states, (str, bytes, dict)):
-            raise TypeError(
-                "predict_batch expects a list of states; pass a single state to predict()/system_one()."
-            )
-        states = list(states)
-        if not states:
-            return []
+        active = list(self.hooks) + normalise_hooks(hooks, on_predict_start, on_predict_end)
+        raise_errors = self.hooks_raise if hooks_raise is None else bool(hooks_raise)
+        ctx = PredictContext(states=states, questions=questions, model=self.model_id, agent=self,
+                             max_len=max_len, head_max_len=head_max_len)
+        try:
+            dispatch(active, "on_predict_start", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            states, questions = ctx.states, ctx.questions
+            if ctx.results is None:
+                # A start hook may have normalised a bare string/dict into a list; only the value
+                # that survives the hook is validated.
+                if isinstance(states, (str, bytes, dict)):
+                    raise TypeError(
+                        "predict_batch expects a list of states; pass a single state to predict()/system_one()."
+                    )
+                states = list(states)
+                if not states:
+                    ctx.results = []
+                else:
+                    ids = list(questions.keys())
+                    # Empty questions: empty answers, zero usage, no tokenization or forward.
+                    if not ids:
+                        ctx.results = [
+                            {"model": "laya-rl-agent", "answers": {},
+                             "usage": {"input_tokens": 0, "output_tokens": 0}} for _ in states
+                        ]
+                    else:
+                        # Validate + normalize each question once (state-independent).
+                        for qid in ids:
+                            self._check_question(qid, questions[qid])
+                        internal = {qid: self._to_internal(questions[qid]) for qid in ids}
+                        chunk = batch_size if (batch_size and batch_size > 0) else len(states)
 
-        ids = list(questions.keys())
-        # Empty questions: empty answers, zero usage, no tokenization or forward (matches system_one).
-        if not ids:
-            return [{"model": "laya-rl-agent", "answers": {}, "usage": {"input_tokens": 0, "output_tokens": 0}}
-                    for _ in states]
+                        # Per-call token-budget overrides (a start hook may have set them).
+                        overrides: Dict[str, int] = {}
+                        if ctx.max_len is not None:
+                            overrides["max_len"] = ctx.max_len
+                        if ctx.head_max_len is not None:
+                            overrides["head_max_len"] = ctx.head_max_len
 
-        # Validate + normalize each question once (state-independent), preserving system_one's checks.
-        for qid in ids:
-            self._check_question(qid, questions[qid])
-        internal = {qid: self._to_internal(questions[qid]) for qid in ids}
-        chunk = batch_size if (batch_size and batch_size > 0) else len(states)
+                        results: List[Dict[str, Any]] = []
+                        for start in range(0, len(states), chunk):
+                            part = states[start:start + chunk]
+                            per_state_items = [self._encode_state(st, ids, internal, **overrides) for st in part]
 
-        results: List[Dict[str, Any]] = []
-        for start in range(0, len(states), chunk):
-            part = states[start:start + chunk]
-            per_state_items = [self._encode_state(st, ids, internal) for st in part]
+                            b = collate_items(per_state_items, self.tok.pad_token_id)
+                            logits, act = self._forward(b)
+                            att = b["attention_mask"]
 
-            b = collate_items(per_state_items, self.tok.pad_token_id)
-            logits, act = self._forward(b)
-            att = b["attention_mask"]
-
-            row = 0
-            for items in per_state_items:
-                nrows = len(items)
-                n_tokens = int(att[row:row + nrows].sum())
-                answers = self._decode_answers(logits, act, items, ids, internal, row)
-                results.append({
-                    "model": "laya-rl-agent",
-                    "answers": answers,
-                    "usage": {"input_tokens": n_tokens, "output_tokens": 0},
-                })
-                row += nrows
-
-        return results
+                            row = 0
+                            for items in per_state_items:
+                                nrows = len(items)
+                                n_tokens = int(att[row:row + nrows].sum())
+                                answers = self._decode_answers(logits, act, items, ids, internal, row)
+                                results.append({
+                                    "model": "laya-rl-agent",
+                                    "answers": answers,
+                                    "usage": {"input_tokens": n_tokens, "output_tokens": 0},
+                                })
+                                row += nrows
+                        ctx.results = results
+        except BaseException as exc:
+            ctx.error = exc
+            try:
+                dispatch(active, "on_error", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            except BaseException as hook_exc:
+                # A failing on_error hook must not hide the failure that triggered it.
+                exc.__context__ = hook_exc
+            raise
+        finally:
+            ctx.elapsed_ms = (time.perf_counter() - ctx.started_at) * 1000.0
+            if ctx.results is not None:
+                ctx.usage = aggregate_usage(ctx.results)
+            try:
+                dispatch(active, "on_predict_end", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            except BaseException as hook_exc:
+                # End hooks run on the failure path too; do not let one mask the real error.
+                if ctx.error is not None:
+                    ctx.error.__context__ = hook_exc
+                else:
+                    raise
+        return ctx.results
 
     @torch.no_grad()
-    def system_one(self, state: Union[str, dict, list], questions: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def system_one(self, state: Union[str, dict, list], questions: Dict[str, Dict[str, Any]],
+                   hooks=None, on_predict_start=None, on_predict_end=None,
+                   hooks_raise: Optional[bool] = None,
+                   max_len: Optional[int] = None,
+                   head_max_len: Optional[int] = None) -> Dict[str, Any]:
         """Evaluate typed questions across state in a single, parallel forward pass.
 
         Args:
@@ -655,7 +739,10 @@ class Agent:
 
         To score many states at once, see `predict_batch`, which shares forward passes across them.
         """
-        return self.predict_batch([state], questions)[0]
+        return self.predict_batch([state], questions, hooks=hooks,
+                                  on_predict_start=on_predict_start,
+                                  on_predict_end=on_predict_end, hooks_raise=hooks_raise,
+                                  max_len=max_len, head_max_len=head_max_len)[0]
 
     def __enter__(self):
         return self
@@ -681,7 +768,9 @@ RLAgent = Agent
 
 
 def load(model_id_or_path: str = "convaiinnovations/laya", device: Optional[str] = None,
-         token: Optional[str] = None, subfolder: Optional[str] = None, fast: bool = False) -> Agent:
+         token: Optional[str] = None, subfolder: Optional[str] = None, fast: bool = False,
+         hooks=None, on_predict_start=None, on_predict_end=None,
+         hooks_raise: bool = True, hooks_concurrent: bool = True) -> Agent:
     """Load a Laya agent.
 
     `subfolder` picks one checkpoint out of a repo that bundles several:
@@ -689,5 +778,10 @@ def load(model_id_or_path: str = "convaiinnovations/laya", device: Optional[str]
         laya.load("convaiinnovations/laya")                           # English (repo root)
         laya.load("convaiinnovations/laya", subfolder="multilingual")
         laya.load("convaiinnovations/laya", fast=True)                # TileLang GPU fast path
+
+    `hooks` / `on_predict_start` / `on_predict_end` observe or shape every prediction; see
+    `laya.hooks`.
     """
-    return Agent(model_id_or_path, device=device, token=token, subfolder=subfolder, fast=fast)
+    return Agent(model_id_or_path, device=device, token=token, subfolder=subfolder, fast=fast,
+                 hooks=hooks, on_predict_start=on_predict_start, on_predict_end=on_predict_end,
+                 hooks_raise=hooks_raise, hooks_concurrent=hooks_concurrent)

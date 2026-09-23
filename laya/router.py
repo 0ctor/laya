@@ -30,8 +30,10 @@ synthetic workflows and should not be a silent default.
 import gc
 import os
 import threading
+import time
 from typing import Any, Dict, List, Optional, Union
 
+from .hooks import HookRegistry, PredictContext, aggregate_usage, dispatch, normalise_hooks
 from .lang import analyse
 
 # The hub repo bundles all three checkpoints; only the requested subfolder is downloaded.
@@ -146,7 +148,7 @@ def _english_from_code(value: Any) -> Optional[bool]:
     return primary in _ENGLISH_SUBTAGS
 
 
-class Router:
+class Router(HookRegistry):
     """Lazily loads Laya checkpoints and sends each request to the right one.
 
         from laya import Router
@@ -173,7 +175,17 @@ class Router:
         r = Router(preload=True)                    # all three resident, routing is free
         r = Router(preload=True, device="cuda")
         r.preload(["english", "multilingual"])      # or just the two you serve
+
+    Hooks are opt-in and run at the Router level: `on_route` sees the routing decision,
+    `on_load` / `on_evict` see model lifecycle, and `on_predict_start` / `on_predict_end`
+    wrap the whole route+infer call. See `laya.hooks`.
     """
+
+    # Opt-in defaults so a hand-built instance (`Router.__new__` in tests) works unset.
+    # `hooks`/`_hooks_mutex` come from HookRegistry.
+    hooks_raise = True
+    hooks_concurrent = True
+    _hooks_lock = None
 
     def __init__(
         self,
@@ -186,7 +198,17 @@ class Router:
         standalone_repos: bool = False,
         preload: bool = False,
         lang_guess: Optional[Any] = None,
+        hooks=None,
+        on_predict_start=None,
+        on_predict_end=None,
+        hooks_raise: bool = True,
+        hooks_concurrent: bool = True,
     ):
+        self.hooks = normalise_hooks(hooks, on_predict_start, on_predict_end)
+        self.hooks_raise = bool(hooks_raise)
+        self.hooks_concurrent = bool(hooks_concurrent)
+        self._hooks_lock = threading.RLock() if not hooks_concurrent else None
+        self._hooks_mutex = threading.Lock()
         self.models = dict(STANDALONE_MODELS if standalone_repos else DEFAULT_MODELS)
         if models:
             self.models.update({normalise_name(k): v for k, v in models.items()})
@@ -226,8 +248,13 @@ class Router:
             agent = Agent(repo, device=self.device, token=self.token, subfolder=sub)
             self._agents[key] = agent
             self._order.append(key)
-            self._evict()
-            return agent
+            evicted = self._evict_locked()
+        # Lifecycle hooks fire after the lock is released, so a hook can safely call the Router.
+        self._dispatch_lifecycle("on_evict", evicted)
+        dispatch(self.hooks, "on_load",
+                 PredictContext(states=[], questions={}, model=key, agent=agent, router=self),
+                 raise_errors=self.hooks_raise, lock=self._hooks_lock)
+        return agent
 
     def _touch(self, key: str):
         with self._lock:
@@ -235,30 +262,41 @@ class Router:
                 self._order.remove(key)
             self._order.append(key)
 
-    def _evict(self):
+    def _evict_locked(self) -> List[str]:
+        """Drop least-recently-used agents until `max_loaded` holds. Returns evicted names."""
+        evicted: List[str] = []
+        while len(self._order) > self.max_loaded:
+            victim = self._order.pop(0)
+            agent = self._agents.pop(victim, None)
+            if agent is not None:
+                evicted.append(victim)
+                del agent
+        if len(self._order) < len(self._agents):     # keep the two views consistent
+            for k in list(self._agents):
+                if k not in self._order:
+                    agent = self._agents.pop(k, None)
+                    if agent is not None:
+                        evicted.append(k)
+                        del agent
+        if evicted:
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+        return evicted
+
+    def _evict(self) -> List[str]:
         with self._lock:
-            evicted = False
-            while len(self._order) > self.max_loaded:
-                victim = self._order.pop(0)
-                agent = self._agents.pop(victim, None)
-                if agent is not None:
-                    evicted = True
-                    del agent
-            if len(self._order) < len(self._agents):     # keep the two views consistent
-                for k in list(self._agents):
-                    if k not in self._order:
-                        agent = self._agents.pop(k, None)
-                        if agent is not None:
-                            evicted = True
-                            del agent
-            if evicted:
-                gc.collect()
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                except Exception:
-                    pass
+            return self._evict_locked()
+
+    def _dispatch_lifecycle(self, event: str, names: List[str]) -> None:
+        for name in names:
+            dispatch(self.hooks, event,
+                     PredictContext(states=[], questions={}, model=name, router=self),
+                     raise_errors=self.hooks_raise, lock=self._hooks_lock)
 
     def attach(self, name: str, agent: Any):
         """Register an already-built Agent under `name` instead of loading a second copy.
@@ -285,15 +323,19 @@ class Router:
         names = [normalise_name(n) for n in (list(self.models) if names is None else names)]
         with self._lock:
             self.max_loaded = max(self.max_loaded, len(set(names) | set(self._agents)))
-            for n in names:
-                if n not in self._agents:      # an attached agent is already built
-                    self.load(n)
+        for n in names:
+            with self._lock:
+                already = n in self._agents    # an attached agent is already built
+            if not already:
+                # load() dispatches on_load outside the lock; do not hold it across the call.
+                self.load(n)
         return self
 
     def unload(self, name: Optional[str] = None):
         """Free one model, or all of them."""
         with self._lock:
             if name is None:
+                freed = list(self._order)
                 self._agents.clear()
                 self._order.clear()
             else:
@@ -301,6 +343,7 @@ class Router:
                 agent = self._agents.pop(key, None)
                 if key in self._order:
                     self._order.remove(key)
+                freed = [key] if agent is not None else []
                 del agent
             gc.collect()
             try:
@@ -309,6 +352,7 @@ class Router:
                     torch.cuda.empty_cache()
             except Exception:
                 pass
+        self._dispatch_lifecycle("on_evict", freed)
 
     @property
     def loaded(self) -> List[str]:
@@ -330,6 +374,30 @@ class Router:
 
     # ------------------------------------------------------------------ routing
     def route(
+        self,
+        state: Union[str, dict, list, None],
+        questions: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None,
+        task: Optional[str] = None,
+        lang: Optional[str] = None,
+        lang_guess: Optional[Any] = None,
+        hooks=None,
+        hooks_raise: Optional[bool] = None,
+    ) -> RouteDecision:
+        """Decide which checkpoint to use, then let `on_route` hooks observe or replace it.
+
+        `ctx.decision` is the `RouteDecision`; a hook may replace it (for example to pin a
+        checkpoint) and the replacement is what gets returned and used. `hooks` are per-call
+        hooks, appended after any installed on the Router.
+        """
+        decision = self._route(state, questions, model=model, task=task, lang=lang, lang_guess=lang_guess)
+        raise_errors = self.hooks_raise if hooks_raise is None else bool(hooks_raise)
+        active = list(self.hooks) + normalise_hooks(hooks)
+        ctx = PredictContext(states=[state], questions=questions or {}, decision=decision, router=self)
+        dispatch(active, "on_route", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+        return ctx.decision
+
+    def _route(
         self,
         state: Union[str, dict, list, None],
         questions: Optional[Dict[str, Any]] = None,
@@ -423,16 +491,68 @@ class Router:
         task: Optional[str] = None,
         lang: Optional[str] = None,
         lang_guess: Optional[Any] = None,
+        hooks=None,
+        on_predict_start=None,
+        on_predict_end=None,
+        hooks_raise: Optional[bool] = None,
+        max_len: Optional[int] = None,
+        head_max_len: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Route, then answer every question in one forward pass on the chosen checkpoint.
 
         The result is the usual `system_one` payload plus a `routing` key recording the decision.
+        Router-level `on_predict_start` / `on_predict_end` hooks wrap the whole route+infer call
+        and see `ctx.decision`; see `laya.hooks`. `max_len` / `head_max_len` override the agent
+        token budget for this call (a start hook may set `ctx.max_len` / `ctx.head_max_len`).
         """
-        decision = self.route(state, questions, model=model, task=task, lang=lang, lang_guess=lang_guess)
+        active = list(self.hooks) + normalise_hooks(hooks, on_predict_start, on_predict_end)
+        raise_errors = self.hooks_raise if hooks_raise is None else bool(hooks_raise)
+
+        # Per-call hooks apply to the whole call, including on_route inside route().
+        decision = self.route(state, questions, model=model, task=task, lang=lang,
+                              lang_guess=lang_guess, hooks=hooks, hooks_raise=hooks_raise)
         agent = self.load(decision["model"])
-        result = agent.system_one(state, questions)
-        result["routing"] = dict(decision)
-        return result
+        ctx = PredictContext(states=[state], questions=questions, decision=dict(decision),
+                             model=decision["model"], agent=agent, router=self,
+                             max_len=max_len, head_max_len=head_max_len)
+        try:
+            dispatch(active, "on_predict_start", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            if ctx.results is None:
+                # Pass token-budget overrides only when set, so any Agent-like object that does
+                # not accept them still works on the default path.
+                overrides = {}
+                if ctx.max_len is not None:
+                    overrides["max_len"] = ctx.max_len
+                if ctx.head_max_len is not None:
+                    overrides["head_max_len"] = ctx.head_max_len
+                result = agent.system_one(ctx.states[0], ctx.questions, **overrides)
+                result["routing"] = dict(decision)
+                ctx.results = [result]
+            else:
+                # A cache hit short-circuits inference, but Router.predict still promises a
+                # `routing` key. Add it without overwriting a routing the cached payload has.
+                for result in ctx.results:
+                    if isinstance(result, dict):
+                        result.setdefault("routing", dict(decision))
+        except BaseException as exc:
+            ctx.error = exc
+            try:
+                dispatch(active, "on_error", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            except BaseException as hook_exc:
+                exc.__context__ = hook_exc
+            raise
+        finally:
+            ctx.elapsed_ms = (time.perf_counter() - ctx.started_at) * 1000.0
+            if ctx.results is not None:
+                ctx.usage = aggregate_usage(ctx.results)
+            try:
+                dispatch(active, "on_predict_end", ctx, raise_errors=raise_errors, lock=self._hooks_lock)
+            except BaseException as hook_exc:
+                if ctx.error is not None:
+                    ctx.error.__context__ = hook_exc
+                else:
+                    raise
+        return ctx.results[0]
 
     def __enter__(self):
         return self
