@@ -218,8 +218,14 @@ def state_text(state: Union[str, dict, list, None], max_chars: int = 4000) -> st
     return " ".join(parts)[:max_chars]
 
 
-def detect_script(text: str) -> str:
-    """Dominant script of `text`: 'latin', 'han', 'devanagari', ... or 'unknown' if there are no letters."""
+def _script_counts(text: str) -> Dict[str, int]:
+    """Count the alphabetic characters of `text` by script, in one pass.
+
+    Latin is inserted last so `_script_from_counts` keeps `detect_script`'s tie-break: a named
+    script wins a tie against Latin, because `max` returns the first of equal values and Latin
+    is the last key. `analyse` needs both the dominant script and the per-script fractions, and
+    used to walk the text twice (once per function) to get them; one pass serves both.
+    """
     counts: Dict[str, int] = {}
     latin = 0
     for ch in text:
@@ -245,32 +251,37 @@ def detect_script(text: str) -> str:
             # handed to the English checkpoint.
             counts["other"] = counts.get("other", 0) + 1
     counts["latin"] = latin
-    total = sum(counts.values())
-    if total == 0:
+    return counts
+
+
+def _script_from_counts(counts: Dict[str, int]) -> str:
+    if not any(counts.values()):
         return "unknown"
     return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
-def script_profile(text: str) -> Dict[str, float]:
-    """Fraction of alphabetic characters belonging to each detected script."""
-    counts: Dict[str, int] = {"latin": 0}
-    for ch in text:
-        if not ch.isalpha():
-            continue
-        cp = ord(ch)
-        if cp < 0x02B0 or 0x1E00 <= cp <= 0x1EFF or 0xFF21 <= cp <= 0xFF3A or 0xFF41 <= cp <= 0xFF5A:
-            counts["latin"] += 1
-            continue
-        for name, ranges in _SCRIPT_RANGES:
-            if any(lo <= cp <= hi for lo, hi in ranges):
-                counts[name] = counts.get(name, 0) + 1
-                break
-        else:
-            counts["other"] = counts.get("other", 0) + 1
+def _profile_from_counts(counts: Dict[str, int]) -> Dict[str, float]:
     total = sum(counts.values())
     if not total:
         return {}
-    return {k: v / total for k, v in counts.items() if v}
+    # Keep Latin first in the public mapping, the order callers saw before this was refactored.
+    ordered: Dict[str, int] = {}
+    if counts.get("latin"):
+        ordered["latin"] = counts["latin"]
+    for name, value in counts.items():
+        if name != "latin":
+            ordered[name] = value
+    return {k: v / total for k, v in ordered.items() if v}
+
+
+def detect_script(text: str) -> str:
+    """Dominant script of `text`: 'latin', 'han', 'devanagari', ... or 'unknown' if there are no letters."""
+    return _script_from_counts(_script_counts(text))
+
+
+def script_profile(text: str) -> Dict[str, float]:
+    """Fraction of alphabetic characters belonging to each detected script."""
+    return _profile_from_counts(_script_counts(text))
 
 
 # A diacritic rate above this is taken as evidence the text is not English, even when no
@@ -387,8 +398,9 @@ def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     `is_english` and `non_latin_fraction`.
     """
     text = state_text(state)
-    prof = script_profile(text)
-    script = detect_script(text)
+    counts = _script_counts(text)
+    prof = _profile_from_counts(counts)
+    script = _script_from_counts(counts)
     non_latin = round(1.0 - prof.get("latin", 0.0), 4) if prof else 0.0
     n_non_latin = round(non_latin * sum(ch.isalpha() for ch in text))
     if script == "latin" and _non_latin_words(text) and (
