@@ -35,6 +35,18 @@ Three checkpoints, and a `Router` that picks between them per request:
 | [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
 | [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
+### What's new in 0.3.8
+
+* **Batch scoring.** `agent.predict_batch(states, questions)` scores many states in shared forward passes, with answers identical to calling `predict` one state at a time. See [Batch Mode](#batch-mode-score-many-states-in-one-forward-pass).
+* **Faster paths, all opt-in.** `laya.load(..., fast=True)` uses a TileLang GPU fast path that matches the stock bf16 forward within rounding (see [GPU Fast Path](#gpu-fast-path-tilelang)). `Agent(compile=True)` enables `torch.compile`, and `laya.onnx_agent.ONNXAgent` runs an exported model on ONNX Runtime. A second `Agent` for the same checkpoint reuses its parsed tokenizer, so it loads in about 0.5 s instead of about 3 s.
+* **`import laya` no longer loads torch.** Routing, language detection and e-mail cleaning work in lightweight processes; torch loads on first use of a model.
+* **New ways to call Laya.** A `laya` [command](#command-line) for quick local tests, an optional [MCP server](#mcp-server-optional) (`pip install "laya[mcp]"`), [LangChain and LangGraph](#langchain-and-langgraph-integration) routing, guardrails, triage and evaluation (`pip install "laya[langchain]"`), and `laya-ts/`, a TypeScript package for Node and the browser that gives the same answers as the Python package.
+* **HTTP server fixes.** Inference runs off the event loop, so one request no longer stalls `/health` and other clients. The published Hugging Face ids select their checkpoint, and Docker Compose gains an HTTP service.
+* **Routing.** CJK text containing Latin brand names, romanized Bangla, and Azerbaijani now reach the multilingual checkpoint. Checked on 20,000 English texts: at most 5 English sentences move, all quoting long native-script names.
+* **Correctness fixes.** Long conversation lists keep the newest turn when truncated. Non-ASCII instructions reach the model as text instead of `\uXXXX` escapes. `truncate_left` with no room left keeps none of the state rather than all of it. `Router.preload([])` loads nothing. `noul` questions accept an opt-in `labels` override. Intel XPU devices are detected.
+* **E-mail cleaning.** A body that mentions "confidential", or a line that starts with "Thanks for" or "Best", is no longer deleted as boilerplate, and more real sign-offs are removed.
+* **Fine-tuning.** Decision-head activation checkpointing is honoured, so the notebook's memory setting takes effect.
+
 ### What's new in 0.3.7
 
 * **About 10x faster loading.** Checkpoints are built without the throwaway random weight initialisation, so `laya.load()` drops from about 22 s to about 2 s on CPU with bit-identical answers. This also skips the pass that crashed on Windows with Python 3.14 (#123).
@@ -494,7 +506,7 @@ triage = agent.predict({"message": "My payment failed twice"}, laya.triage_quest
 
 ---
 
-## LangChain & LangGraph Integration
+## LangChain and LangGraph Integration
 
 Fast System 1 routing and guardrails directly inside LangGraph workflows and LCEL chains:
 
@@ -790,7 +802,8 @@ result["shortlist"]["intent"]["labels"]  # the top 20 labels sent to the model
 ## Community Tools
 
 * **[omp-laya-judge](https://github.com/F0Rextasy/omp-laya-judge)**: an [oh-my-pi](https://github.com/can1357/oh-my-pi) plugin with a local System-1 judge MCP server and skill (`choice`/`bool`/`score`, 0 tokens, about 0.3 s on CPU), confidence-gated escalation, and reproducible quiz and Snake demos.
-* [laya-adk-toolkit](https://github.com/Ashfaqbs/laya-adk-toolkit) — [Google ADK](https://google.github.io/adk-docs/) tools that let an agent call Laya's `classify`/`score`/`detect` typed decisions directly as tools, instead of asking an LLM to guess at structured output.
+* **[laya-adk-toolkit](https://github.com/Ashfaqbs/laya-adk-toolkit)**: [Google ADK](https://google.github.io/adk-docs/) tools that let an agent call Laya's `classify`/`score`/`detect` typed decisions directly as tools, instead of asking an LLM to guess at structured output.
+* **[laya-Ascend](https://github.com/zzhdbw/laya-Ascend)**: Laya on Huawei Ascend NPUs through `torch-npu`, with a CPU vs NPU benchmark (34x to 71x faster at batch size 1), a setup guide, and Snake and Tetris demos.
 
 ---
 
