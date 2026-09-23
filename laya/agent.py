@@ -307,6 +307,9 @@ class Agent:
         crit = qdef.get("criteria")
         if t == "choice" and isinstance(crit, list):
             crit = {c: None for c in crit}
+        elif t == "noul" and isinstance(crit, dict):
+            # Normalize boolean literal keys to string keys ("true"/"false")
+            crit = {str(k).lower(): v for k, v in crit.items()}
         ins = qdef["instructions"]
         if not isinstance(ins, str):
             ins = json.dumps(ins)
@@ -321,7 +324,7 @@ class Agent:
             questions: Dictionary mapping question_id -> question definition.
                 - choice: {"type": "choice", "instructions": "...", "criteria": {"optA": "...", ...}}
                 - score:  {"type": "score",  "instructions": "...", "criteria": ["lvl0", "lvl1", ...]}
-                - noul:   {"type": "noul",   "instructions": "..."}
+                - noul:   {"type": "noul",   "instructions": "...", "criteria": {"true": "...", "false": "..."}}
 
         Returns:
             Dictionary with answers, probabilities, calibrated confidence, and token usage.
