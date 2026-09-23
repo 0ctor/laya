@@ -506,6 +506,49 @@ override on your own data rather than treating `A`/`B` as a universal fix.
 
 ---
 
+## MCP Server (Optional)
+
+Laya can be exposed as an [MCP](https://modelcontextprotocol.io) stdio server, so any MCP
+client (OpenClaw, Claude Desktop, Cursor, ...) can call typed decisions as tools
+(`laya_predict`, `laya_route`, `laya_preset`, `laya_status`) without writing glue code.
+This is an **optional extra**: the core package has no `mcp` dependency.
+
+```bash
+pip install "laya[mcp]"
+laya-mcp-server          # or: python -m laya.mcp.server
+```
+
+Example MCP client configuration (stdio transport):
+
+```json
+{
+  "mcpServers": {
+    "laya": {
+      "command": "laya-mcp-server",
+      "env": { "LAYA_DEVICE": "cpu" }
+    }
+  }
+}
+```
+
+The environment variables follow the contract documented at the top of
+[`laya/serve.py`](laya/serve.py), so the same variable has one meaning across the
+package:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LAYA_DEVICE` | (auto) | Same as `laya.serve`: the value is passed straight to torch |
+| `LAYA_PRELOAD` | `1` | Same as `laya.serve`: build the checkpoints at startup, not lazily |
+| `LAYA_MODELS` | `english,multilingual` | Comma list to preload (serve contract). MCP difference: an empty value preloads `english,multilingual` so `typed-decisions` stays lazy; in `laya.serve` empty means every checkpoint |
+| `LAYA_THREADS` | (torch default) | Same as `laya.serve`: cap torch intra-op threads for CPU inference; keep it at or below the physical core count |
+
+The tools return structured JSON (answers with probabilities, routing metadata, device,
+`latency_ms`). As with the SDK, use it for structured decisions only; not for open Q&A or
+text generation. Tests: `tests/test_mcp.py` (CI, no weights) and
+`tests/test_mcp_local_e2e.py` (local, real weights and a real stdio handshake).
+
+---
+
 ## Benchmarks
 
 Community diagnostic: [Chinese workplace decisions (Feishu-style)](research/benchmarks/feishu_zh/README.md) · [中文说明](research/benchmarks/feishu_zh/README.zh-CN.md). Includes frozen synthetic cases, archived paired Laya/Jev responses, and an offline audit; separate from the benchmark suites below.
