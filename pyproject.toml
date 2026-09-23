@@ -48,6 +48,8 @@ fast = ["tilelang>=0.1.14"]
 # `pip install laya[mcp]` adds the MCP stdio server (laya.mcp / the laya-mcp-server CLI).
 mcp = ["mcp>=2.2.0"]
 
+onnx = ["onnx", "onnxruntime"]
+
 [project.scripts]
 laya = "laya.cli:main"
 laya-serve = "laya.serve:main"
