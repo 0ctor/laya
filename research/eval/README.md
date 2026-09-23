@@ -318,3 +318,72 @@ checks, and an order-invariant model scores exactly 1/3.
   reduced-precision autocast and `score_cases` does not. The parity check reports that
   difference instead of hiding it.
 * New checks are one function each, registered in `CHECKS`.
+
+
+## Metamorphic option-order robustness (experimental)
+
+`metamorphic.py` adds the initial scope of
+[#244](https://github.com/NandhaKishorM/laya/issues/244): **choice option order robustness**, without changing model/runtime behavior. Label renaming, neutral labels, paraphrases, structured-state permutations, `score` and `noul` perturbations are intentionally deferred. Run from the repository root after installing Laya and `datasets`:
+
+```bash
+python -m research.eval.metamorphic --model convaiinnovations/laya \
+    --langs en --per-lang 100 --n-opts 20 --batch-size 16 --out robustness.json
+python -m research.eval.metamorphic --model convaiinnovations/laya \
+    --subfolder multilingual --langs en --out multilingual-robustness.json
+python -m unittest research.eval.test_metamorphic -v
+```
+
+Each MASSIVE case uses the existing harness's sampler and produces two inputs:
+
+1. The unchanged baseline.
+2. One seeded shuffle of option order; if the shuffle is the identity, a one-slot
+   rotation is used. This is a bounded diagnostic, not exhaustive permutation testing
+   or a uniform draw over all nonidentity permutations.
+
+Instructions and state are otherwise unchanged. Option key/value pairs are moved together during permutation. Every result is mapped back to the original semantic option order **before** predictions and metrics are computed. Exact ties choose the first canonical option. The RNG starts fresh per language; `--seed` controls both sampling and transformations. `--batch-size` bounds the number of forward-pass inputs and does not alter the generated variants. Model inference may still have small floating-point differences across devices and batch sizes.
+
+The JSON contains `config`, per-language `report`, and full `cases`. Each case saves its original input, canonical keys and optional gold index; each variant saves its presented keys, explicit `canonical_to_transformed` and `transformed_to_canonical` label mappings, slot-to-canonical indices, complete **canonical-order** probability vector, prediction, confidence, correctness (or `null`), and comparison to baseline. Probabilities are not rounded. The config records model/subfolder, temperature mode and values, truncation settings, dataset, seed and batch size. For reproducible checkpoint comparisons, use a pinned local snapshot and retain the environment versions alongside the report. `--unclamped` has the same meaning as in `laya_eval`. If any language fails, its error is saved and the command exits nonzero while retaining successful languages.
+
+Metrics are grouped under `option_order` and `overall`:
+
+| Metric | Definition |
+|---|---|
+| `semantic_agreement_rate` | Fraction of baseline/variant pairs with the same canonical argmax |
+| `mean_probability_drift` | Mean absolute probability change across options, then pairs |
+| `max_probability_drift` | Largest absolute change of any option across all pairs |
+| `mean_js_divergence` | Mean Jensen-Shannon divergence using natural logs, in `[0, ln(2)]` |
+| `mean_confidence_drift` | Mean signed change of maximum probability, variant minus baseline |
+| `mean_absolute_confidence_drift` | Mean magnitude of that confidence change |
+| `worst_confidence_increase_on_disagreement` | Largest positive confidence change among changed decisions, or zero if none |
+
+`overall` is pair-weighted, not a fraction of cases where *all* variants agree. `quality` separately reports accuracy and the existing harness's 15-bin ECE for baseline and each transformation on labelled cases only. Empty groups contain `n: 0`; unlabelled quality groups contain `n_labelled: 0` without inventing an accuracy or ECE. Robustness agreement is not a correctness measure: consistently wrong predictions can be perfectly invariant.
+
+For another corpus, the Python API accepts `(state, questions)` cases in the same shape as the harness, and a callback returning probability vectors in presented option order:
+
+```python
+from research.eval.metamorphic import evaluate, model_scorer
+agent.model.eval()
+result = evaluate(cases, model_scorer(agent), gold_indices=None, seed=13)
+```
+
+The first version intentionally accepts only **one choice question per case**, with at least two options. Label renaming and other metamorphic transforms are intentionally deferred as proposed in the issue.
+
+For an explicit single-case experiment, the same implementation exposes:
+
+```python
+from research.eval.metamorphic import (
+    MetamorphicCase, permute_options,
+    evaluate_variants, compare_predictions,
+)
+
+case = MetamorphicCase(state, questions, gold_index=None)
+variants = [permute_options(case, seed=42)]
+agent.model.eval()
+results = evaluate_variants(agent, case, variants)
+report = compare_predictions(baseline=results.baseline, variants=results.variants)
+```
+
+For offline tests, pass `agent=None, score=fake_scorer` to `evaluate_variants`. The scorer takes a batch of harness `(state, questions)` inputs and returns one probability vector per input. The public transformations return independent copies and explicit mappings in both directions, including identity label mappings for order-only transformations.
+
+**Semantic agreement and distribution stability are different properties.**
+A shift from `[0.91, 0.06, 0.03]` to `[0.88, 0.08, 0.04]` preserves the decision while showing nonzero drift. Switching the winner is reported as disagreement, regardless of whether confidence rises or falls. No metric here automatically classifies either observation as a bug; acceptable variation depends on the use case, and the report deliberately defines no universal pass/fail threshold.
