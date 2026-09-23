@@ -35,6 +35,17 @@ Three checkpoints, and a `Router` that picks between them per request:
 | [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
 | [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
+### What's new in 0.3.7
+
+* **About 10x faster loading.** Checkpoints are built without the throwaway random weight initialisation, so `laya.load()` drops from about 22 s to about 2 s on CPU with bit-identical answers. This also skips the pass that crashed on Windows with Python 3.14 (#123).
+* **Better routing for non-English Latin text.** Plain-ASCII Spanish, Italian, Portuguese and French (accents stripped by mail clients and ticket systems) and Brazilian Portuguese support text now reach the multilingual checkpoint. Letters in scripts the router has no range for no longer fall through to English, and URLs, e-mail addresses and dotted names no longer count as words. Checked on 20,000 English texts, with no English prose moved.
+* **A Jev-compatible HTTP server.** `pip install "laya[serve]"`, then `laya-serve`, speaks `POST /v1/systemone`, so existing TypeSafe clients work by changing `baseUrl`. See [Self-Hosting](#self-hosting-http-server-jev-compatible).
+* **Router defaults and hooks.** `Router()` keeps two checkpoints resident, so alternating languages no longer reload a model on every request. You can pass your own language guess with `lang_guess=` and send undecided text to `Router(default=...)`. `Router` and `Agent` also work as context managers, and evicted models free their memory.
+* **Clearer errors and safer edge cases.** A malformed question is rejected with a message naming the question and what to fix. An empty question set returns an empty answer, and invalid temperatures in a checkpoint no longer stop it loading.
+* **E-mail cleaning for Portuguese and Spanish** replies, signatures and footers.
+* **Fine-tuning notebook fixes.** Calibration is now fitted on a held-out slice rather than on training data (#186), and stale temperature overrides are cleared before a refit.
+* **Docker quickstart** under `docs/docker.md`.
+
 ---
 
 ## Installation
@@ -596,6 +607,14 @@ result["shortlist"]["intent"]["labels"]  # the top 20 labels sent to the model
 [Issue #102](https://github.com/NandhaKishorM/laya/issues/102) reports that a top-20 zero-shot shortlist moved a BANKING77 run from 54.3% to 60.8% on the reporter's setup. Those figures are the reporter's; this repository has not remeasured them.
 
 * Ordinal `score` questions are the weakest primitive (SST-5 0.372).
+* **`noul` can follow its option labels instead of the state, most strongly on `laya` (English).** `noul` renders its two options as `false:` / `true:`, and on the English checkpoint that label pair can dominate the answer, returning a confident "no" for clearly positive input (#156). Until a retrained checkpoint lands, check `noul` answers on your own data. If they look stuck, ask the same question as a two-option `choice` with neutral keys and your yes/no wording as the descriptions:
+
+  ```python
+  {"type": "choice", "instructions": "Is this review positive?",
+   "criteria": {"A": "yes, the review is positive", "B": "no, the review is negative"}}
+  ```
+* **`laya-multilingual` has a position bias on `score` questions** (#131): it rarely picks the first-listed level, in any language. For English score questions, route to `model="english"`, and for other languages validate score outputs on your own data before relying on them.
+* **`action.act_probability` carries no usable signal yet** (#185). It reads 1.0 for almost every input, and its raw logits run against correctness (AUROC 0.30 on 396 labelled decisions). Gate on `confidence` instead, which reaches an AUROC of 0.77 on the same items.
 * `laya` collapses outside English; `laya-multilingual` is weaker on English. Route, or pick
   deliberately.
 
@@ -603,6 +622,7 @@ result["shortlist"]["intent"]["labels"]  # the top 20 labels sent to the model
 
 ## Community Tools
 
+* **[omp-laya-judge](https://github.com/F0Rextasy/omp-laya-judge)**: an [oh-my-pi](https://github.com/can1357/oh-my-pi) plugin with a local System-1 judge MCP server and skill (`choice`/`bool`/`score`, 0 tokens, about 0.3 s on CPU), confidence-gated escalation, and reproducible quiz and Snake demos.
 * [laya-adk-toolkit](https://github.com/Ashfaqbs/laya-adk-toolkit) — [Google ADK](https://google.github.io/adk-docs/) tools that let an agent call Laya's `classify`/`score`/`detect` typed decisions directly as tools, instead of asking an LLM to guess at structured output.
 
 ---
@@ -614,10 +634,6 @@ result["shortlist"]["intent"]["labels"]  # the top 20 labels sent to the model
 * **Engineering Writeup:** [Read the full story on Dev.to](https://dev.to/nandakishor_m_6cc0adfde9f/i-built-non-autoregressive-decision-models-a-year-ago-then-a-frontier-lab-called-it-a-18me)
 
 ---
-
-## Community integrations
-
-* **[omp-laya-judge](https://github.com/F0Rextasy/omp-laya-judge)** — [oh-my-pi](https://github.com/can1357/oh-my-pi) plugin: local System-1 judge MCP server + skill (`choice`/`bool`/`score`, 0 tokens, ~0.3 s on CPU), session-start banner, auto-use rule with confidence-gated escalation, plus reproducible quiz (6/8) and planner-assisted Snake (score 12, 300 moves, safety shield) demos.
 
 ## Fine-Tuning
 

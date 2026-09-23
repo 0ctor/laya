@@ -5,8 +5,11 @@ Every checkpoint answered **byte-identical questions** in each run (fixed seed).
 | run | what | where |
 |---|---|---|
 | T4 Colab | typed-decisions, MASSIVE (14 langs), XNLI (15 langs), English suites, latency, option-order robustness, calibration repair | `research/results/t4_colab_benchmark.json` |
-| CPU sweep | MASSIVE intent across **all 51 languages**, typed-decisions on all three checkpoints | `research/results/cpu_51_language_sweep.json` |
-| Applications | the six workflow themes + the datasets where Jev numbers exist, all three checkpoints | `research/results/app_benchmark.json` |
+| CPU sweep | MASSIVE intent across **all 51 languages**; its typed-decisions part (`part_b`) covers the English checkpoint only | `research/results/cpu_51_language_sweep.json` |
+| Applications | the seven workflow themes + the datasets where Jev numbers exist, all three checkpoints (laya 0.2.1, CPU, 400 cases per task, seed 13, 2026-09-19) | `research/results/app_benchmark_results.json` |
+
+
+**Calibration columns in the CPU sweep predate the temperature clamp.** The 51-language ECE and mean-confidence figures were produced before #42 clamped temperatures to `[0.5, 5]`, so today's package reports different confidence for the affected buckets (`choice:11+` is now served at 0.5, not 0.1006). Accuracy columns are unaffected. A re-run with the current package is tracked in #208.
 
 ---
 
