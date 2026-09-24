@@ -142,6 +142,12 @@ export function checkQuestion(qid: string, qdef: unknown): void {
     if (crit.length === 0) {
       throw new Error(`question ${qidStr(qid)}: a score question needs at least one level`);
     }
+    const nullAt = crit.findIndex((c) => c === null || c === undefined);
+    if (nullAt >= 0) {
+      throw new Error(
+        `question ${qidStr(qid)}: score level ${nullAt} is null; give every level a description, index 0 first`,
+      );
+    }
   } else if (crit !== undefined && crit !== null && (typeof crit !== "object" || Array.isArray(crit))) {
     throw new Error(
       `question ${qidStr(qid)}: a noul question takes 'criteria' as a dict with optional 'true'/'false' descriptions, or omits it`,

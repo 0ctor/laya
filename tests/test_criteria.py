@@ -290,6 +290,10 @@ for label, qdef in [
     ("score with an empty list", {"type": "score", "instructions": "How urgent?", "criteria": []}),
     ("score with a dict of levels", {"type": "score", "instructions": "How urgent?",
                                      "criteria": {"low": "no pressure", "high": "blocking"}}),
+    # a null level reached the model as the text "level 1: null" and came back as a null legend
+    # value, which a Jev client refuses to parse (#302)
+    ("score with a null level", {"type": "score", "instructions": "How urgent?",
+                                 "criteria": ["low", None, "high"]}),
     ("choice with labels", {"type": "choice", "instructions": "Which team?",
                             "criteria": ["billing", "tech"],
                             "labels": {"false": "B", "true": "A"}}),
@@ -328,6 +332,12 @@ for label, qdef in [
         check_true("rejected/%s says what to fix" % label, len(str(e)) > 40, str(e))
     except Exception as e:
         FAIL.append("rejected/%s: %s instead of ValueError: %s" % (label, type(e).__name__, e))
+
+try:
+    agent.system_one(STATE, {"q": {"type": "score", "instructions": "How urgent?", "criteria": ["low", None]}})
+    FAIL.append("rejected/score null level names the level: no error raised")
+except ValueError as e:
+    check_true("rejected/score null level names the level", "level 1" in str(e), str(e))
 
 # the same questions through the public entry point, not only the method under it
 router = Router()

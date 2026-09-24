@@ -505,6 +505,9 @@ class Agent(HookRegistry):
                                  "descriptions, index 0 first" % (qid,))
             if not crit:
                 raise ValueError("question %r: a score question needs at least one level" % (qid,))
+            if None in crit:
+                raise ValueError("question %r: score level %d is null; give every level a description, "
+                                 "index 0 first" % (qid, crit.index(None)))
         elif crit is not None and not isinstance(crit, dict):
             raise ValueError("question %r: a noul question takes 'criteria' as a dict with optional "
                              "'true'/'false' descriptions, or omits it" % (qid,))
