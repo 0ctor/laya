@@ -35,49 +35,12 @@ Three checkpoints, and a `Router` that picks between them per request:
 | [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
 | [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
-### What's new in 0.3.13
+### What's new in 0.3.14
 
-* **Fast-path fixes.** After a CUDA out-of-memory error, the fallback to CPU now switches the TileLang fast path off first instead of retrying on CUDA. A `choice` question with a single option no longer crashes the fast path, requests longer than the fast path was built for get a clear error, and concurrent calls can no longer overwrite each other's CUDA-graph buffers.
+* **Documentation site.** The docs now live at [nandhakishorm.github.io/laya](https://nandhakishorm.github.io/laya/): guides for hooks, schema-driven decisions, Docker and LangChain, plus an API reference generated from the docstrings.
+* **Sturdier fast path.** After a CUDA out-of-memory error, the fallback to CPU switches the TileLang fast path off first instead of retrying on CUDA. A `choice` question with a single option no longer crashes it, requests longer than it was built for get a clear error, and concurrent calls can no longer overwrite each other's CUDA-graph buffers.
 * **Server and runtime.** `laya-serve` drains its inference pool on shutdown and returns 401 for a malformed bearer header, and `ONNXAgent` matches `Agent` on empty question sets and long conversation lists.
-* **Fixes elsewhere.** The `laya` command prints the right probability for a choice, and LangChain remote calls refuse cross-origin or HTTPS-downgrade redirects.
-* **For contributors.** `AGENTS.md` gives AI coding assistants the contribution rules, and `laya-ts` gains `BaseHook` and default hooks.
-
-### What's new in 0.3.12
-
-* **Correct routed batches.** `Router.predict_batch` now keeps two requests apart when their `choice` options are the same but in a different order, so every request gets the same answer as its own `predict` call (#166). The Router's predict hooks now run for every request in a batch, so a redaction hook also covers batched traffic.
-* **Schema-driven decisions.** `agent.decide(state, schema=...)` takes a JSON schema or pydantic model and returns typed values in one forward pass.
-* **Faster, same answers.** The state is tokenized once per call instead of once per question, `predict_batch(..., sort_by_length=True)` cuts padding work on mixed-length batches, and Apple GPUs use fp16 once a call has enough question rows.
-* **More hooks.** `BaseHook` to subclass, and process-wide default hooks for tracers and metrics.
-* **Per-language calibration.** `lang_temperatures=` lets you apply your own per-language temperatures, and the Router passes the detected language through. Nothing ships with values, so defaults are unchanged.
-* **`answer_confidence`.** Every answer also reports `max(p)`, next to the existing `confidence`, which is unchanged.
-* **Fixes.** A blank `lang=` now falls through to detection instead of pinning the multilingual checkpoint, `laya-serve` enforces its body-size limit on chunked uploads, and mixed-width training batches reject targets longer than their own options.
-* **CLI, TypeScript and docs.** `laya "..." --preset triage`; `laya-ts` gains hooks, one-pass state tokenization, and routing and e-mail parity with Python; CONTRIBUTING, a code of conduct and issue templates; an API reference generated from docstrings.
-
-### What's new in 0.3.11
-
-* **Routed batches.** `Router.predict_batch(requests)` routes each request, groups them by checkpoint and question set, and scores each group in shared forward passes, with answers identical to one `predict` call per request. Each request can set its own `model`, `task`, `lang` or `lang_guess`. See [Heterogeneous routed batches](#heterogeneous-routed-batches).
-* **Prediction hooks.** Opt-in hooks run around every decision on `Agent`, `Router` and `ONNXAgent`, to audit, trace, redact, cache or gate results. With no hooks set, answers are identical to before. See [Prediction Hooks](#prediction-hooks).
-* **transformers 4.x and Apple GPUs.** Checkpoints re-saved by transformers 5 now load with the right RoPE settings on transformers 4.x, and `predict()` no longer crashes on MPS builds without an autocast backend.
-* **Stricter `noul` questions.** A `noul` `criteria` dict keyed anything other than `true`/`false` is now rejected with a clear message instead of being silently replaced by the defaults. Use `labels` to change the wording.
-* **Safer HTTP server.** Timing-safe API key checks, request size and question limits (413), a 400 for malformed JSON, errors that do not leak paths, and a validated port. Docker Compose binds `laya-serve` to loopback by default and adds a healthcheck.
-* **More hardware and docs.** Native ARM64 and DGX Spark container builds, a documentation site built from `docs/`, and a local web GUI demo under `examples/`.
-* **Smaller fixes.** Plain-ASCII German routes to the multilingual checkpoint, very large e-mails and states are bounded before regex work, `ONNXAgent` validates questions like `Agent`, an empty `HF_TOKEN` no longer breaks downloads, the tokenizer config is written atomically, and the `langchain` extra installs `langgraph`.
-
-### What's new in 0.3.10
-
-0.3.10 changes only this README; its code is the same as 0.3.9. Everything below is new since 0.3.6. `pip install -U laya` for all of it; the checkpoints are unchanged.
-
-* **About 10x faster loading.** Checkpoints are built without the throwaway random weight initialisation, so `laya.load()` drops from about 22 s to about 2 s on CPU with bit-identical answers. This also skips the pass that crashed on Windows with Python 3.14 (#123). A second `Agent` for the same checkpoint reuses its parsed tokenizer and loads in about 0.5 s.
-* **`import laya` no longer loads torch.** Routing, language detection and e-mail cleaning work in lightweight processes; torch loads on first use of a model.
-* **Batch scoring.** `agent.predict_batch(states, questions)` scores many states in shared forward passes and returns results in input order. See [Batch Mode](#batch-mode-score-many-states-in-one-forward-pass).
-* **Faster paths, all opt-in.** `laya.load(..., fast=True)` uses a TileLang GPU fast path that matches the stock bf16 forward within rounding (see [GPU Fast Path](#gpu-fast-path-tilelang)). `Agent(compile=True)` enables `torch.compile`, and `laya.onnx_agent.ONNXAgent` runs an exported model on ONNX Runtime.
-* **Run it your way, locally.** A self-hosted Jev-compatible HTTP server (`pip install "laya[serve]"`, then `laya-serve`, see [Self-Hosting](#self-hosting-http-server-jev-compatible)), a `laya` [command](#command-line) for quick local tests, an optional [MCP server](#mcp-server-optional) (`pip install "laya[mcp]"`), [LangChain and LangGraph](#langchain-and-langgraph-integration) routing, guardrails, triage and evaluation (`pip install "laya[langchain]"`), a Docker quickstart under `docs/docker.md`, and `laya-ts/`, a TypeScript package for Node and the browser that gives the same answers as the Python package.
-* **Better routing.** Plain-ASCII Spanish, Italian, Portuguese and French, Brazilian Portuguese support text, CJK text containing Latin brand names, romanized Bangla and Azerbaijani now reach the multilingual checkpoint. Scripts the router has no range for no longer fall through to English, and URLs, e-mail addresses and dotted names no longer count as words. Checked on 20,000 English texts: at most 5 English sentences move, all quoting long native-script names.
-* **Router defaults and hooks.** `Router()` keeps two checkpoints resident, so alternating languages no longer reload a model on every request. Pass your own language guess with `lang_guess=`, send undecided text to `Router(default=...)`, and use `Router` and `Agent` as context managers. `Router.preload([])` loads nothing.
-* **Correctness fixes.** Long conversation lists keep the newest turn when truncated. Non-ASCII instructions reach the model as text instead of `\uXXXX` escapes. `truncate_left` with no room left keeps none of the state rather than all of it. `noul` questions accept an opt-in `labels` override, and Intel XPU devices are detected.
-* **Clearer errors and safer edge cases.** A malformed question is rejected with a message naming the question and what to fix. An empty question set returns an empty answer, and invalid temperatures in a checkpoint no longer stop it loading.
-* **E-mail cleaning.** Portuguese and Spanish replies, signatures and footers are handled. A body that mentions "confidential", or a line that starts with "Thanks for" or "Best", is no longer deleted as boilerplate, and more real sign-offs are removed.
-* **Fine-tuning notebook fixes.** Calibration is fitted on a held-out slice rather than on training data (#186), stale temperature overrides are cleared before a refit, and decision-head activation checkpointing is honoured.
+* **Smaller fixes.** The `laya` command prints the right probability for a choice, LangChain remote calls refuse cross-origin or HTTPS-downgrade redirects, and `AGENTS.md` gives AI coding assistants the contribution rules.
 
 ---
 
