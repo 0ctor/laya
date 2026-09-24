@@ -725,11 +725,24 @@ class Router(HookRegistry):
                     overrides = {key: value for key, value in (("max_len", ctx.max_len),
                                                                ("head_max_len", ctx.head_max_len))
                                  if value is not None}
+                    # `predict` forwards the language of the request so the agent can apply its
+                    # per-language temperatures; the batched path forwarded only the token
+                    # budgets, so the same request scored differently depending on the entry
+                    # point. Only computed for an agent that actually carries them: `lang` is
+                    # otherwise unused, and adding it to the group key would split a group that
+                    # shares one forward pass today.
+                    lang_key = None
+                    if getattr(agent, "lang_temperatures", None):
+                        lang_key = requests[i].get("lang")
+                        if lang_key is None:
+                            detection = decisions[i].get("detection") or {}
+                            lang_key = detection.get("language")
                     # Order-sensitive at every nesting level (#166): options are positional, so two
                     # equal schemas with different key orders must not share a group.
                     schema = _question_schema(ctx.questions)
                     for group in question_groups:
-                        if group["schema"] == schema and group["overrides"] == overrides:
+                        if (group["schema"] == schema and group["overrides"] == overrides
+                                and group["lang"] == lang_key):
                             group["items"].append((i, ctx))
                             break
                     else:
@@ -737,17 +750,35 @@ class Router(HookRegistry):
                             "questions": ctx.questions,
                             "schema": schema,
                             "overrides": overrides,
+                            "lang": lang_key,
                             "items": [(i, ctx)],
                         })
 
                 for group in question_groups:
                     items = group["items"]
-                    batch_results = agent.predict_batch(
-                        [ctx.states[0] for _, ctx in items],
-                        group["questions"],
-                        batch_size=batch_size,
-                        **group["overrides"],
-                    )
+                    batch_kwargs = dict(group["overrides"])
+                    if group["lang"] is not None:
+                        batch_kwargs["lang"] = group["lang"]
+                    try:
+                        batch_results = agent.predict_batch(
+                            [ctx.states[0] for _, ctx in items],
+                            group["questions"],
+                            batch_size=batch_size,
+                            **batch_kwargs,
+                        )
+                    except TypeError as e:
+                        # Same tolerance `predict` has for an Agent-like object whose
+                        # `predict_batch` predates the `lang` argument.
+                        if batch_kwargs.get("lang") is not None and "unexpected keyword argument 'lang'" in str(e):
+                            batch_kwargs.pop("lang")
+                            batch_results = agent.predict_batch(
+                                [ctx.states[0] for _, ctx in items],
+                                group["questions"],
+                                batch_size=batch_size,
+                                **batch_kwargs,
+                            )
+                        else:
+                            raise
 
                     if len(batch_results) != len(items):
                         raise RuntimeError(
