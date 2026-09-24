@@ -572,13 +572,13 @@ Because Laya's probabilities are trained with strictly proper scoring rules (RLC
 dept = answers["department"]["choice"]
 conf = answers["department"]["confidence"]
 
-if conf >= 0.85:
-    # High confidence: automated action without human in the loop
-    route_automatically(dept)
+if conf >= THRESHOLD:               # refit and validate THRESHOLD on your own held-out data
+    route_automatically(dept)       # above it: act, and sample the decisions you act on
 else:
-    # Low confidence: escalate to human triage
     escalate_to_human_agent(dept, reason=f"Low confidence ({conf:.2f})")
 ```
+
+A threshold is a policy you choose from measured accuracy at that coverage on your data, not a property of the model. Both checkpoints are over-confident as shipped and `laya-multilingual` has no fitted temperatures at all, so fit them before relying on these numbers — see [Calibration](#calibration) above, and the [fine-tuning notebook](notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb) for the fitting loop itself. Then pick the point where the errors you accept are ones you can live with. Confidence orders decisions; it does not establish that a decision is correct.
 
 ---
 
