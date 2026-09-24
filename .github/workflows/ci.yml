@@ -23,6 +23,7 @@ jobs:
   typescript:
     name: TypeScript (node${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: laya-ts
@@ -46,6 +47,7 @@ jobs:
   feishu-benchmark:
     name: Chinese benchmark audit (no models or API)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,6 +59,7 @@ jobs:
   test:
     name: tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +129,7 @@ jobs:
   test-windows:
     name: tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -187,6 +191,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -201,6 +206,7 @@ jobs:
   build:
     name: package
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
