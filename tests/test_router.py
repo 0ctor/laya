@@ -353,6 +353,31 @@ for label, state, segment in [
                  "status page is red for the whole region",
       "body": "Deu erro (500) no login, alguém pode ver isso agora?"},
      "Deu erro (500) no login, alguém pode ver isso agora?"),
+    # the rule runs both ways: an English ticket that pastes a foreign log goes to multilingual too
+    ("english ticket + portuguese error log",
+     "Our Brazilian branch cannot issue invoices since this morning. The system shows this message:\n"
+     "ERRO: Não foi possível emitir a nota fiscal, o certificado digital está vencido\n"
+     "Can you help us before the end of the day?",
+     "ERRO: Não foi possível emitir a nota fiscal, o certificado digital está vencido"),
+    ("english ticket + german error log",
+     "The nightly sync to the Munich server keeps failing and we lose the whole batch.\n"
+     "Fehler: Die Verbindung zum Server wurde unterbrochen, bitte versuchen Sie es spaeter noch einmal\n"
+     "Please check the firewall rules on your side.",
+     "Fehler: Die Verbindung zum Server wurde unterbrochen, bitte versuchen Sie es spaeter noch einmal"),
+    ("english ticket + spanish error payload",
+     {"subject": "Payment failed for a customer in Madrid",
+      "description": "The customer tried three times with the same card and each attempt was declined by "
+                     "the gateway, so we would like to know whether the problem is on our side or with the bank.",
+      "error": {"code": "card_declined",
+                "message": "La tarjeta fue rechazada por el banco emisor, contacte con su banco"}},
+     "La tarjeta fue rechazada por el banco emisor, contacte con su banco"),
+    # acronyms are dropped only from mixed-case text: a line written all in capitals keeps its words
+    ("all-caps portuguese line",
+     "This is the fourth email I have sent about the same order and nobody has answered any of them.\n"
+     "The customer wrote this in the chat and then closed the window:\n"
+     "QUERO MEU DINHEIRO DE VOLTA AGORA\n"
+     "Could someone from the billing team look at order 5512 today?",
+     "QUERO MEU DINHEIRO DE VOLTA AGORA"),
 ]:
     check("mixed/is not english: " + label, is_english(state), False)
     check("mixed/segment reported: " + label, analyse(state)["mixed_segment"], segment)
@@ -372,6 +397,18 @@ for label, state in [
                     "Please guard the empty case."),
     ("english json", {"status": "open", "priority": "high",
                       "message": "The customer was charged twice and wants a refund"}),
+    # a line carries far less text than a state, so its evidence must be two different words and no
+    # acronyms or slash compounds. A ham-radio listing on 20 Newsgroups (misc.forsale/76512) went to
+    # multilingual on `COM ... COM` alone; hockey picks on the team codes, OS/2 on `os` and `dos`.
+    ("same word twice (Nav/Com, COM)",
+     "I'm looking for good deals on the following (used or new):\nAviation Headsets (with mic).\n"
+     "Handheld Nav/Com tranciever (may consider COM only).\nPortable GPS or Loran Navigator."),
+    ("team codes", "Round two predictions for the pool, as promised.\nQUE  vs MON:  MON  in 7.\n"
+                   "PIT  vs NYI:  PIT  in 5."),
+    ("slash compound", "I need a converter for these image formats.\n"
+                       "DOS, OS/2 or platform independent programs if possible.\nThanks in advance."),
+    ("backslash path", "My modem stopped answering after the upgrade.\nC:\\DOS\\mode COM1:9600,n,8,1,p\n"
+                       "Is that the right line for a 9600 baud connection?"),
 ]:
     check("mixed/english stays english: " + label, is_english(state), True)
     check("mixed/no segment: " + label, analyse(state)["mixed_segment"], None)

@@ -386,15 +386,25 @@ def guess_latin_language(text: str) -> Optional[str]:
 # `=`, `;`, braces, brackets or a call `name(` -- is skipped, and dotted or underscored identifiers
 # are dropped from the rest. Prose keeps "Deu erro (500)": the parenthesis follows a space.
 _CODE_LINE = re.compile(r"[=;{}\[\]]|\w\(")
-_IDENTIFIER = re.compile(r"\w+(?:[._]\w+)+")
+_CODE_IDENTIFIER = re.compile(r"\w+(?:[._]\w+)+")
+# Slash and backslash compounds are names, not sentences: `Nav/Com` and `OS/2` read as Portuguese
+# (`com`, `os`), `C:\DOS\mode` as Portuguese (`dos`), `ESA/UN` as Spanish (`un`).
+_SLASH_COMPOUND = re.compile(r"\w+(?:[/\\]\w+)+")
+# An all-caps token inside mixed-case text is an acronym or a code: `MON`, `LA`, `EST`, `COM`, `DES`
+# are hockey teams, states, time zones and radio bands, not French or Portuguese. A segment written
+# entirely in capitals keeps its words -- a customer shouting in Portuguese is still Portuguese.
+_LETTER_RUN = re.compile(r"[^\W\d_]{2,}")
 
 
 def _non_english_segment(state: Union[str, dict, list, None], max_chars: int = 4000):
     """First line or field that, read on its own, is named a non-English language, else None.
 
-    Returns (language, segment). A segment needs the same evidence a whole state does -- at least
-    four words, and a language named by `latin_profile` -- so this adds no new way to call English
-    text foreign; it only stops a longer English part from outvoting it.
+    Returns (language, segment). A segment needs the evidence a whole state needs -- at least four
+    words, and a language named by `latin_profile` -- and, because one line carries far less text
+    than a state, two things more: the words that name the language must be two *different* ones
+    (`COM ... COM` in an English radio listing is one word seen twice), and acronyms and slash
+    compounds are not words. This adds no new way to call English text foreign; it only stops a
+    longer English part from outvoting a foreign one.
     """
     seen = 0
     for leaf in _iter_text(state):
@@ -404,11 +414,14 @@ def _non_english_segment(state: Union[str, dict, list, None], max_chars: int = 4
             seen += len(seg)
             if _CODE_LINE.search(seg):
                 continue
-            prose = _IDENTIFIER.sub(" ", seg)
-            if len(_WORD.findall(prose)) < 4:
+            prose = _SLASH_COMPOUND.sub(" ", _CODE_IDENTIFIER.sub(" ", seg))
+            if any(ch.islower() for ch in prose):
+                prose = _LETTER_RUN.sub(lambda m: " " if m.group().isupper() else m.group(), prose)
+            tokens = _WORD.findall(prose)
+            if len(tokens) < 4:
                 continue
             lang = latin_profile(prose)["language"]
-            if lang not in (None, "en"):
+            if lang not in (None, "en") and len({w.lower() for w in tokens} & _STOP.get(lang, set())) >= 2:
                 return lang, seg.strip()
     return None
 
