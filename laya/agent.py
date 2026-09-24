@@ -903,6 +903,9 @@ class Agent(HookRegistry):
         return _decide(self, state, schema, questions=questions,
                        return_details=return_details, **predict_kwargs)
 
+    def __repr__(self) -> str:
+        return "Agent(model_id=%r, device=%s)" % (self.model_id, getattr(self, "device", None))
+
     predict = system_one
 
 
