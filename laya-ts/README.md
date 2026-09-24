@@ -67,6 +67,36 @@ class MetricsHook extends BaseHook {
 setDefaultHooks([new MetricsHook()]);  // addDefaultHook(...) appends; clearDefaultHooks() resets
 ```
 
+## Structured decisions (`decide`)
+
+Turn a JSON schema into typed values in one call — the port of Python's `laya.structured`
+(#280). Enum properties become choice questions, booleans become noul, bounded integers
+become scores; anything the fixed-option model cannot answer (free strings, arrays, nested
+objects, `$ref`) is rejected with a `SchemaError` naming the path:
+
+```ts
+import { Agent, decide } from "laya-ts";
+
+const agent = await Agent.load("./dist/laya");
+const values = await agent.decide(ticketText, {
+  type: "object",
+  properties: {
+    department: { type: "string", enum: ["billing", "support", "sales"] },
+    urgency: { type: "integer", minimum: 0, maximum: 2 },
+    needs_human: { type: "boolean" },
+  },
+});
+// { department: "billing", urgency: 2, needs_human: false }
+```
+
+`router.decide(...)` works the same way (routing options are forwarded to `predict`), and the
+free `decide(runner, state, schema, opts)` accepts anything with a `predict` method. Pass
+`{ returnDetails: true }` for per-field confidence and probabilities, or `{ questions }`
+instead of a schema to get raw answers. Zod/TypeBox users can pass `z.toJSONSchema(Model)` —
+any object with a `toJSONSchema()` method is accepted. `planFromJsonSchema`,
+`questionsFromJsonSchema` and `answersToJson` expose the planning and projection steps.
+
+## Shortlist (many labels)
 ## Shortlist (many labels)
 
 ```ts
