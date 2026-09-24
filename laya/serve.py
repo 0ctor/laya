@@ -36,6 +36,7 @@ import hmac
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
@@ -279,8 +280,18 @@ def create_app(router: Optional[Any] = None):
             # hs-jev decodes `answers` and `usage` and ignores the rest.
             async with gate:
                 loop = asyncio.get_running_loop()
-                return await loop.run_in_executor(
+                t0 = time.perf_counter()
+                result = await loop.run_in_executor(
                     pool, lambda: router.predict(state, questions, model=model))
+                infer_ms = (time.perf_counter() - t0) * 1000.0
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    content=result,
+                    headers={
+                        "Server-Timing": f"inference;dur={infer_ms:.2f}",
+                        "X-Inference-Time-Ms": f"{infer_ms:.2f}"
+                    }
+                )
         except HTTPException:
             raise
         except ValueError as e:
