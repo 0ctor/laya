@@ -137,8 +137,16 @@ def _question_schema(questions: Dict[str, Any]) -> str:
 
 # Subtags that mean "the English checkpoint can read this". Routing needs one bit -- is this
 # English Latin text, or something the English checkpoint cannot read -- not a language id, so
-# every other code resolves to the multilingual checkpoint.
+# every other code that names a language resolves to the multilingual checkpoint.
 _ENGLISH_SUBTAGS = ("en", "eng", "english")
+
+# Codes that are valid `$LANG` values but name no language, so they answer nothing about the
+# state. `C`, `POSIX` and `C.UTF-8` are what minimal images ship -- `C.UTF-8` is the default
+# `LANG` in the official Python image, which is where `laya-serve` runs -- and the ISO 639-2
+# special codes say the same thing in the standard's own vocabulary: `und` undetermined,
+# `zxx` no linguistic content, `mul` multiple languages. They abstain, which is what the blank
+# case below already does, rather than forcing the multilingual checkpoint on English text.
+_LANGUAGE_AGNOSTIC_CODES = ("c", "posix", "und", "zxx", "mul")
 
 
 def _english_from_code(value: Any) -> Optional[bool]:
@@ -146,7 +154,9 @@ def _english_from_code(value: Any) -> Optional[bool]:
 
     Accepts the forms a caller is likely to have to hand: `"en"`, `"EN"`, `"en-US"`, the
     POSIX `"en_US"` (which `$LANG` holds), and `"en_US.UTF-8"`. `None` here means "no usable
-    hint", which is what lets a language-identification model abstain.
+    hint", which is what lets a language-identification model abstain -- and it is also what a
+    code that names no language returns, so `LANG=C` falls through to detection instead of
+    pinning every request to one checkpoint.
     """
     if value is None:
         return None
@@ -155,7 +165,7 @@ def _english_from_code(value: Any) -> Optional[bool]:
         return None
     code = code.split(".", 1)[0]                       # en_US.UTF-8 -> en_US
     primary = code.replace("_", "-").split("-", 1)[0]  # en_US -> en
-    if not primary:
+    if not primary or primary in _LANGUAGE_AGNOSTIC_CODES:
         return None
     return primary in _ENGLISH_SUBTAGS
 

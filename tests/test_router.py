@@ -13,6 +13,7 @@ from laya.router import (  # noqa: E402
     BUNDLE_REPO,
     DEFAULT_MODELS,
     STANDALONE_MODELS,
+    _english_from_code,
     _repo_str,
     Router,
     match_typed_decisions_workflow,
@@ -819,6 +820,45 @@ for label, text, script in (
     ("armenian", "Իմ հաշիվը գանձվել է երկու անգամ", "armenian"),
 ):
     check("unlisted/regression " + label + " script", detect_script(text), script)
+
+# ------------------------------------------------- lang codes that name no language (#359)
+# `C`, `POSIX` and `C.UTF-8` are valid `$LANG` values that identify nothing, and `C.UTF-8` is
+# the default in the official Python image -- which is where `laya-serve` runs. Passing one to
+# `Router(lang=...)` used to resolve to "not English" and pin every request to the multilingual
+# checkpoint, before detection ever ran. The blank-string case below already abstained; these
+# codes are the same kind of non-answer, so they abstain too. The ISO 639-2 special codes say
+# the same thing in the standard's vocabulary.
+_ENGLISH_STATE = "Please refund the duplicate charge on invoice 4411"
+for code in ("C", "POSIX", "C.UTF-8", "c.utf8", "c", "posix",
+             "und", "zxx", "mul", "UND", "Zxx", " und "):
+    check("lang-code/%r abstains at the code level" % code, _english_from_code(code), None)
+    decision = Router().route(_ENGLISH_STATE, lang=code)
+    check("lang-code/%r lets detection name the checkpoint" % code, decision.model, "english")
+    check("lang-code/%r says the hint was not used" % code,
+          "explicit" in str(decision.reason), False)
+
+# An empty hint is the case this mirrors, so it must still behave the same way.
+check("lang-code/empty string still abstains", _english_from_code(""), None)
+check("lang-code/None still abstains", _english_from_code(None), None)
+check("lang-code/whitespace still abstains", _english_from_code("   "), None)
+
+# The change must not touch codes that do name a language: English still routes now, and a
+# non-English code still forces the multilingual checkpoint rather than being second-guessed.
+for code in ("en", "eng", "english", "EN", "en-US", "en_US.UTF-8"):
+    check("lang-code/%r is still decisive English" % code, _english_from_code(code), True)
+    check("lang-code/%r routes without detection" % code,
+          Router().route(_ENGLISH_STATE, lang=code).reason.count("explicit"), 1)
+for code in ("de", "fr", "zh", "ja", "pt-BR", "de_DE.UTF-8"):
+    check("lang-code/%r is still decisive non-English" % code, _english_from_code(code), False)
+    check("lang-code/%r routes to the multilingual checkpoint" % code,
+          Router().route(_ENGLISH_STATE, lang=code).model, "multilingual")
+
+# A subtag after an agnostic primary is not itself agnostic: `C` names nothing, but the primary
+# subtag is what is compared, so a hypothetical `C-something` also abstains and is not treated
+# as a language by accident.
+check("lang-code/agnostic primary wins over its subtag", _english_from_code("C.UTF-8"), None)
+check("lang-code/posix with a modifier abstains", _english_from_code("POSIX-1"), None)
+
 
 # --------------------------------------------------------------------- report
 print("\n%d passed, %d failed" % (len(PASS), len(FAIL)))
