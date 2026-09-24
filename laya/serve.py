@@ -252,12 +252,12 @@ def create_app(router: Optional[Any] = None):
                 pass
         raw = await _read_body_capped(request)
         try:
-            # Every parse failure a client can cause is a ValueError: JSONDecodeError for
-            # malformed/empty/truncated bodies, UnicodeDecodeError for invalid UTF-8. A
-            # broader catch would also swallow ClientDisconnect and Starlette's own
-            # stream errors, reporting a transport or server fault as the client's.
+            # A client can cause ValueError (JSONDecodeError for malformed/empty/truncated
+            # bodies, UnicodeDecodeError for invalid UTF-8) or RecursionError (deeply nested
+            # arrays/objects). A broader catch would also swallow ClientDisconnect and
+            # Starlette's own stream errors, reporting a transport or server fault as the client's.
             body = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):
             raise HTTPException(status_code=400, detail="request body must be valid JSON")
         if not isinstance(body, dict) or "questions" not in body:
             raise HTTPException(status_code=400, detail="request body must be an object with a 'questions' field")

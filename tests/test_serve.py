@@ -97,6 +97,7 @@ def test_missing_questions_is_400(monkeypatch):
     b"",                    # empty body
     b"\xff\xfe\x00bad",     # invalid UTF-8
     b'{"questions": ',      # truncated
+    pytest.param(b"[" * 100000, id="deeply-nested"),  # raises RecursionError, not ValueError
 ])
 def test_malformed_json_body_is_400(monkeypatch, payload):
     """A body that isn't valid JSON must not fall through to an unstyled 500."""
