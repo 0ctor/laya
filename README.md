@@ -53,15 +53,32 @@ print(result["answers"]["churn_risk"]["noul"])    # probability the answer is ye
 print(result["routing"]["model"])                 # english
 ```
 
-Text in any of 100+ languages works the same way: the `Router` sends it to `laya-multilingual` automatically. From the command line, `laya "My payment failed twice" --preset triage` answers a ready-made question set. More in the [full quickstart](#quickstart-route-mode-recommended) and the [docs](https://nandhakishorm.github.io/laya/).
+The same call works in any of 100+ languages. The `Router` detects the script and language and sends non-English text to `laya-multilingual`:
+
+```python
+for text in ["मुझसे मार्च में दो बार शुल्क लिया गया, कृपया डुप्लिकेट राशि वापस करें।",
+             "La aplicación se cierra cada vez que abro la configuración."]:
+    r = router.predict(text, {"department": questions["department"]})
+    print(r["routing"]["model"], r["answers"]["department"]["choice"])
+# multilingual billing
+# multilingual technical
+```
+
+From the command line, `laya "My payment failed twice" --preset triage` answers a ready-made question set. More in the [full quickstart](#quickstart-route-mode-recommended) and the [docs](https://nandhakishorm.github.io/laya/).
+
+## Fine-tune for better accuracy
+
+The shipped checkpoints work zero-shot, but fine-tuning on decisions from your own domain is where accuracy jumps. On the typed-decisions benchmark (2,000 decisions across four workflows), the fine-tuned `laya-typed-decisions` checkpoint scores **0.766** accuracy, against **0.362** for the base English checkpoint on the same decisions.
+
+**[Fine-tuning notebook](https://github.com/NandhaKishorM/laya/blob/main/notebooks/laya_finetune_typed_decisions_2xT4_kaggle.ipynb)**: runs the whole loop on Kaggle's free 2x T4 GPUs (build the dataset, train, fit calibration temperatures, evaluate, and push the result to the Hub). Details in [Fine-Tuning](#fine-tuning).
 
 ## Documentation
 
 **[nandhakishorm.github.io/laya](https://nandhakishorm.github.io/laya/)**: guides for [prediction hooks](https://nandhakishorm.github.io/laya/hooks/), [schema-driven decisions](https://nandhakishorm.github.io/laya/structured/), [Docker](https://nandhakishorm.github.io/laya/docker/) and [LangChain and LangGraph](https://nandhakishorm.github.io/laya/langchain/), plus a full [API reference](https://nandhakishorm.github.io/laya/reference/).
 
-## What's new in 0.3.16
+## What's new in 0.3.17
 
-* **Installation, quickstart and documentation first.** This README now opens with how to install Laya, a runnable example, and where the docs are.
+* **Installation, quickstart and documentation first.** This README now opens with how to install Laya, runnable English and multilingual examples, how fine-tuning improves accuracy, and where the docs are.
 * **Documentation site** at [nandhakishorm.github.io/laya](https://nandhakishorm.github.io/laya/), with an API reference generated from the docstrings.
 
 The code is unchanged from the last runtime release, whose fixes are:
