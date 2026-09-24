@@ -46,6 +46,7 @@ export {
   sequenceWithState,
   softmax,
   confidenceFromProbs,
+  answerConfidence,
   clampTemperature,
   tempBucket,
   collateItems,
