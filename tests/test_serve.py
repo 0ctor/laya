@@ -315,3 +315,19 @@ def test_health_stays_available_during_inference(monkeypatch):
     assert seen["slow"] == 200
     assert seen["health"] == 200 and seen["payload"]["status"] == "ok"
     assert fake.threads and "MainThread" not in fake.threads, fake.threads
+
+
+def test_inference_timing_headers():
+    """POST /v1/systemone returns Server-Timing and X-Inference-Time-Ms headers."""
+    router = FakeRouter()
+    client = TestClient(create_app(router=router))
+    res = client.post("/v1/systemone", json={
+        "state": "test timing",
+        "questions": {"dept": {"type": "choice", "instructions": "which?", "criteria": {"billing": "invoices"}}}
+    })
+    assert res.status_code == 200
+    assert "Server-Timing" in res.headers
+    assert res.headers["Server-Timing"].startswith("inference;dur=")
+    assert "X-Inference-Time-Ms" in res.headers
+    dur = float(res.headers["X-Inference-Time-Ms"])
+    assert dur >= 0.0
