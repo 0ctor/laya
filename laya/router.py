@@ -691,7 +691,12 @@ class Router(HookRegistry):
             groups.setdefault(decision["model"], []).append(i)
 
         results: List[Optional[Dict[str, Any]]] = [None] * len(requests)
-        active = list(self.hooks)
+        # `compose_hooks`, not `list(self.hooks)`: this is the composition `predict` uses at its
+        # own dispatch site, and it is what merges in `set_default_hooks`. Reading the instance
+        # list alone silently dropped every process-wide default from the batched path while
+        # keeping them on `predict`, so a default audit or metrics hook saw no Router-level event
+        # for a request that arrived through `predict_batch`.
+        active = compose_hooks(self.hooks)
         raise_errors = self.hooks_raise
 
         for model_name, indices in groups.items():
