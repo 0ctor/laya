@@ -142,12 +142,30 @@ check("score/string criteria still work",
       render_options({"t": "score", "ins": "x", "crit": ["low", "high"]}),
       ["level 0: low", "level 1: high"])
 
-# every rendered option must be a str, whatever went in
-for qq in [{"t": "choice", "ins": "x", "crit": {"a": {"n": 1}, "b": [1, 2], "c": 3.5}},
-           {"t": "score", "ins": "x", "crit": [{"a": 1}, [2], None]},
-           {"t": "noul", "ins": "x", "crit": {"true": [1], "false": {"z": 0}}}]:
-    check_true("all options are str (%s)" % qq["t"],
-               all(isinstance(o, str) for o in render_options(qq)))
+# every rendered option must be a str, whatever went in.
+# The original set varied the criterion *values* only, and left every label a string, which is
+# why it passed while `render_options({1: None})` returned `[1]` from a function annotated
+# `-> List[str]`. `build_sequence` then called `.replace` on that int, and the error named
+# neither the question nor the label. Labels are varied here for the same reason the values were.
+for label, qq in [
+    ("choice/objects", {"t": "choice", "ins": "x", "crit": {"a": {"n": 1}, "b": [1, 2], "c": 3.5}}),
+    ("score/objects", {"t": "score", "ins": "x", "crit": [{"a": 1}, [2], None]}),
+    ("noul/objects", {"t": "noul", "ins": "x", "crit": {"true": [1], "false": {"z": 0}}}),
+    ("choice/int labels, no description", {"t": "choice", "ins": "x", "crit": {1: None, 2: None, 3: None}}),
+    ("choice/float labels, no description", {"t": "choice", "ins": "x", "crit": {1.5: None}}),
+    ("choice/None label, no description", {"t": "choice", "ins": "x", "crit": {None: None, "billing": None}}),
+    ("choice/bool labels, no description", {"t": "choice", "ins": "x", "crit": {True: None, False: None}}),
+    ("choice/int labels with descriptions", {"t": "choice", "ins": "x", "crit": {1: "one", 2: "two"}}),
+]:
+    check_true("all options are str (%s)" % label,
+               all(isinstance(o, str) for o in render_options(qq)), render_options(qq))
+
+# the rendered text of a non-string label is its string form, not its repr
+check("choice/int label renders as its str", render_options({"t": "choice", "ins": "x", "crit": {1: None}}), ["1"])
+check("choice/None label renders as the word none",
+      render_options({"t": "choice", "ins": "x", "crit": {None: None}}), ["None"])
+check("choice/int label keeps its description form",
+      render_options({"t": "choice", "ins": "x", "crit": {1: "one"}}), ["1: one"])
 
 # the JSON we emit is parseable back
 parsed = json.loads(render_options(
