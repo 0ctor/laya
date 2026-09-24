@@ -1,0 +1,27 @@
+{
+  "repos": {
+    "0ctor/laya": {
+      "branch": "main",
+      "app": "laya",
+      "kind": "single",
+      "compose": "docker-compose.yml",
+      "script": "/home/ubuntu/octor/scripts/deploy/app.sh",
+      "images": {
+        "web": "ghcr.io/0ctor/laya"
+      },
+      "build": {
+        "enabled": true,
+        "dockerfile": "Dockerfile",
+        "context": ".",
+        "args": {
+          "TORCH_INDEX": "cpu"
+        }
+      },
+      "health": {
+        "container": "octor-laya",
+        "url": "http://127.0.0.1:8343/health",
+        "internal": "http://octor-laya:8000/health"
+      }
+    }
+  }
+}
