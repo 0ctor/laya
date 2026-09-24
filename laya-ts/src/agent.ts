@@ -94,14 +94,31 @@ export interface AgentOptions {
   head_max_len?: number;
   temperature?: unknown;
   temperature_by_options?: Record<string, unknown>;
+  /**
+   * Per-language temperature overrides, keyed by language code; keys are normalised to
+   * their base subtag (`de-AT` -> `de`), matching Python `Agent(lang_temperatures=...)`.
+   * Each entry may carry a `temperature` list of 3 floats (default: the base raw
+   * temperature) and/or a `temperature_by_options` map (default: none). A matching
+   * override replaces the scale wholesale — see the note at the decode site.
+   */
+  lang_temperatures?: Record<
+    string,
+    { temperature?: unknown; temperature_by_options?: Record<string, unknown> } | null
+  >;
   hooks?: HookArg;
   onPredictStart?: PredictHook;
   onPredictEnd?: PredictHook;
   hooksRaise?: boolean;
 }
 
-/** Per-call hook options shared by Agent.systemOne/predict and Router.predict. */
+/** Per-call options shared by Agent.systemOne/predict and Router.predict. */
 export interface PredictOptions {
+  /**
+   * Language of the request (e.g. "de"); when the Agent has a matching
+   * `lang_temperatures` override it selects that language's temperature, exactly like
+   * Python `system_one(..., lang=...)`. Routing alone never sets this.
+   */
+  lang?: string | null;
   hooks?: HookArg;
   onPredictStart?: PredictHook;
   onPredictEnd?: PredictHook;
@@ -248,6 +265,10 @@ export class Agent extends HookRegistry {
   temperatureByOptionsRaw: Record<string, unknown>;
   temperature: number[];
   temperatureByOptions: Record<string, number>;
+  langTemperatures: Record<
+    string,
+    { temperature: number[]; temperatureByOptions: Record<string, number> }
+  >;
 
   constructor(opts: AgentOptions) {
     super();
@@ -292,6 +313,25 @@ export class Agent extends HookRegistry {
           `using ${rejected.join(", ")}. Treat confidence from the affected entries as uncalibrated.`,
       );
     }
+    // Mirrors Agent.__init__ (agent.py): keys normalise to the base subtag, an omitted
+    // temperature defaults to the base raw temperature, and every value is clamped.
+    this.langTemperatures = {};
+    for (const [l, lc] of Object.entries(opts.lang_temperatures ?? {})) {
+      const normL = l.split("-")[0].toLowerCase();
+      const tRaw = lc?.temperature ?? rawList;
+      if (!Array.isArray(tRaw) || tRaw.length !== 3) {
+        throw new Error(
+          `Language override ${JSON.stringify(l)} temperature must be a list of 3 floats`,
+        );
+      }
+      const tboRaw = (lc?.temperature_by_options ?? {}) as Record<string, unknown>;
+      this.langTemperatures[normL] = {
+        temperature: [0, 1, 2].map((i) => clampTemperature(tRaw[i])),
+        temperatureByOptions: Object.fromEntries(
+          Object.entries(tboRaw).map(([k, v]) => [k, clampTemperature(v)]),
+        ),
+      };
+    }
   }
 
   /**
@@ -327,7 +367,13 @@ export class Agent extends HookRegistry {
       if (ctx.results === null) {
         const out: SystemOneResult[] = [];
         for (const st of ctx.states) {
-          out.push(await this._systemOneCore(st, ctx.questions as Record<string, QuestionDef>));
+          out.push(
+            await this._systemOneCore(
+              st,
+              ctx.questions as Record<string, QuestionDef>,
+              opts.lang ?? null,
+            ),
+          );
         }
         ctx.results = out as unknown as Record<string, unknown>[];
         ctx.model ??= out[0]?.model ?? null;
@@ -356,6 +402,7 @@ export class Agent extends HookRegistry {
   private async _systemOneCore(
     state: unknown,
     questions: Record<string, QuestionDef>,
+    lang: string | null = null,
   ): Promise<SystemOneResult> {
     const ids = Object.keys(questions ?? {});
     if (ids.length === 0) {
@@ -403,7 +450,13 @@ export class Agent extends HookRegistry {
       const k = items[r].markers.length;
       const qt = QTYPES[q.t];
       const bucket = tempBucket(qt, k);
-      const scale = this.temperatureByOptions[bucket] ?? this.temperature[qt] ?? 1.0;
+      // Python parity (_decode_answers): a matching lang override replaces the scale
+      // wholesale — its own temperature_by_options first, then its 3-slot temperature —
+      // so an override without buckets intentionally ignores the base per-bucket entries.
+      const langCfg = lang ? this.langTemperatures[lang.split("-")[0].toLowerCase()] : undefined;
+      const scale = langCfg
+        ? (langCfg.temperatureByOptions[bucket] ?? langCfg.temperature[qt] ?? 1.0)
+        : (this.temperatureByOptions[bucket] ?? this.temperature[qt] ?? 1.0);
       const z = (logits[r] as number[]).slice(0, k).map((v) => v / scale);
       const p = softmax(z);
       const actRow = (act[r] as number[]) ?? [1, 0];
@@ -466,6 +519,8 @@ export class Agent extends HookRegistry {
       localDir?: string;
       token?: string | null;
       numThreads?: number;
+      /** Per-language temperature overrides; see AgentOptions.lang_temperatures. */
+      lang_temperatures?: AgentOptions["lang_temperatures"];
     },
   ): Promise<Agent> {
     const sub = opts?.subfolder ?? null;
@@ -509,6 +564,6 @@ export class Agent extends HookRegistry {
         `Incompatible model: tokenizer.json is missing or invalid in ${JSON.stringify(dir)}: ${String(error)}`,
       );
     }
-    return new Agent({ provider, tok, cfg });
+    return new Agent({ provider, tok, cfg, lang_temperatures: opts?.lang_temperatures });
   }
 }

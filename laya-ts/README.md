@@ -78,6 +78,29 @@ const out = await predictShortlist(agent, state, questions, embedFn, 20);
 // embedFnFromAgent(agent) mean-pools the loaded encoder; a dedicated bi-encoder usually shortlists better.
 ```
 
+## Per-language calibration (`lang_temperatures`)
+
+Port of the Python `Agent(lang_temperatures=...)` knob. A language override replaces the
+checkpoint's temperature for matching requests — keys normalise to the base subtag
+(`de-AT` → `de`), an omitted `temperature` inherits the base one, and
+`temperature_by_options` works per option-count bucket as usual:
+
+```ts
+const agent = await Agent.load("convaiinnovations/laya", {
+  lang_temperatures: {
+    de: { temperature: [1.2, 1.2, 1.2] },                 // fitted on German evals
+    ja: { temperature_by_options: { "choice:11+": 1.4 } }, // buckets only, base temperature kept
+  },
+});
+await agent.systemOne(state, questions, { lang: "de" });   // uses the German temperature
+await router.predict(state, questions);                    // Router forwards the detected language
+```
+
+`Router.predict` forwards an explicit `lang` verbatim and otherwise the detected language
+(never `"en"` — matching Python, where detection only names non-English languages), so an
+override applies exactly to the requests it was fitted on.
+
+
 ## Example (repo root)
 
 ```bash
