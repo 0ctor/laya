@@ -1,5 +1,6 @@
 import { analyse, type AnalyseResult } from "./lang.js";
 import type { PredictOptions, QuestionDef, SystemOneResult } from "./agent.js";
+import { decide, type DecideOptions, type DecisionResult } from "./structured.js";
 import {
   HookRegistry,
   PredictContext,
@@ -499,6 +500,29 @@ export class Router extends HookRegistry {
       }
     }
     return (ctx.results as unknown as RoutedResult[])[0];
+  }
+
+  /**
+   * Answer `state` against a JSON schema (or explicit `opts.questions`) and return typed
+   * values — see `structured.ts`. Routing options (`model`, `task`, ...) are forwarded to
+   * `predict`.
+   */
+  async decide(
+    state: unknown,
+    schema: unknown,
+    opts: DecideOptions & RouteOptions & PredictOptions & { returnDetails: true },
+  ): Promise<DecisionResult>;
+  async decide(
+    state: unknown,
+    schema?: unknown,
+    opts?: DecideOptions & RouteOptions & PredictOptions,
+  ): Promise<Record<string, unknown>>;
+  async decide(
+    state: unknown,
+    schema?: unknown,
+    opts: DecideOptions & RouteOptions & PredictOptions = {},
+  ): Promise<Record<string, unknown> | DecisionResult> {
+    return decide(this, state, schema, opts);
   }
 
   async systemOne(
