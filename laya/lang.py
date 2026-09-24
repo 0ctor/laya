@@ -386,10 +386,13 @@ def guess_latin_language(text: str) -> Optional[str]:
 # `=`, `;`, braces, brackets or a call `name(` -- is skipped, and dotted or underscored identifiers
 # are dropped from the rest. Prose keeps "Deu erro (500)": the parenthesis follows a space.
 _CODE_LINE = re.compile(r"[=;{}\[\]]|\w\(")
-_CODE_IDENTIFIER = re.compile(r"\w+(?:[._]\w+)+")
 # Slash and backslash compounds are names, not sentences: `Nav/Com` and `OS/2` read as Portuguese
-# (`com`, `os`), `C:\DOS\mode` as Portuguese (`dos`), `ESA/UN` as Spanish (`un`).
-_SLASH_COMPOUND = re.compile(r"\w+(?:[/\\]\w+)+")
+# (`com`, `os`), `C:\DOS\mode` as Portuguese (`dos`), `ESA/UN` as Spanish (`un`). A whitespace token
+# holding a letter or digit, a joiner (`.`, `_`, `/`, `\`) and another letter or digit is an
+# identifier or a compound and is dropped whole. The pattern has a fixed length on purpose: an
+# open-ended `\w+(?:[._]\w+)+` backtracks quadratically on a long run of letters with no joiner,
+# and a state is user input.
+_JOINED = re.compile(r"[^\W_][._/\\][^\W_]")
 # An all-caps token inside mixed-case text is an acronym or a code: `MON`, `LA`, `EST`, `COM`, `DES`
 # are hockey teams, states, time zones and radio bands, not French or Portuguese. A segment written
 # entirely in capitals keeps its words -- a customer shouting in Portuguese is still Portuguese.
@@ -404,17 +407,18 @@ def _non_english_segment(state: Union[str, dict, list, None], max_chars: int = 4
     than a state, two things more: the words that name the language must be two *different* ones
     (`COM ... COM` in an English radio listing is one word seen twice), and acronyms and slash
     compounds are not words. This adds no new way to call English text foreign; it only stops a
-    longer English part from outvoting a foreign one.
+    longer English part from outvoting a foreign one. Reads at most `max_chars` characters in all.
     """
     seen = 0
     for leaf in _iter_text(state):
         for seg in leaf.split("\n"):
             if seen >= max_chars:
                 return None
+            seg = seg[:max_chars - seen]
             seen += len(seg)
             if _CODE_LINE.search(seg):
                 continue
-            prose = _SLASH_COMPOUND.sub(" ", _CODE_IDENTIFIER.sub(" ", seg))
+            prose = " ".join(tok for tok in seg.split() if not _JOINED.search(tok))
             if any(ch.islower() for ch in prose):
                 prose = _LETTER_RUN.sub(lambda m: " " if m.group().isupper() else m.group(), prose)
             tokens = _WORD.findall(prose)
