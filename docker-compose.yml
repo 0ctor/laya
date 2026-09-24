@@ -1,0 +1,68 @@
+# Deploy Octor (sp1-sd-octor-1): /home/ubuntu/octor/apps/laya/
+# Hook kind=single → IMAGE=ghcr.io/0ctor/laya:<sha>
+#
+# Rede interna: http://octor-laya:8000/v1/systemone
+# VPN:         http://10.8.0.1:8343/health
+# Sem Traefik público.
+
+name: laya
+
+services:
+  laya:
+    image: ${IMAGE:-ghcr.io/0ctor/laya:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TORCH_INDEX: cpu
+        TORCH_VERSION: "${LAYA_TORCH_VERSION:-2.14.0}"
+    container_name: octor-laya
+    restart: unless-stopped
+    command: ["laya-serve"]
+    env_file: [.env]
+    environment:
+      TZ: America/Sao_Paulo
+      LAYA_HOST: 0.0.0.0
+      LAYA_PORT: "8000"
+      LAYA_DEVICE: "${LAYA_DEVICE:-cpu}"
+      # Multilingual first — tráfego Octor é PT-BR.
+      LAYA_PRELOAD: "${LAYA_PRELOAD:-1}"
+      LAYA_MODELS: "${LAYA_MODELS:-multilingual}"
+      LAYA_THREADS: "${LAYA_THREADS:-4}"
+      LAYA_AUTO_TASK: "${LAYA_AUTO_TASK:-0}"
+      LAYA_LOG_LEVEL: "${LAYA_LOG_LEVEL:-info}"
+      OMP_NUM_THREADS: "${OMP_NUM_THREADS:-4}"
+      HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-0}"
+    ports:
+      - "127.0.0.1:8343:8000"
+      - "10.8.0.1:8343:8000"
+    volumes:
+      - /home/ubuntu/octor/volumes/laya/hf-cache:/home/laya/.cache/huggingface
+    networks:
+      - octor
+    mem_limit: 3072m
+    cpus: "2.0"
+    init: true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)",
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 8
+      start_period: 15m
+    labels:
+      - traefik.enable=false
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+networks:
+  octor:
+    external: true

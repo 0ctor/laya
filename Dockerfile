@@ -30,7 +30,7 @@ RUN pip install ".[serve]" && pip check
 FROM ${PYTHON_IMAGE} AS runtime
 
 LABEL org.opencontainers.image.title="Laya Docker quickstart" \
-      org.opencontainers.image.source="https://github.com/NandhaKishorM/laya" \
+      org.opencontainers.image.source="https://github.com/0ctor/laya" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 ENV PATH="/opt/venv/bin:$PATH" \
