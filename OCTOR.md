@@ -30,3 +30,12 @@ curl -fsS http://10.8.0.1:8343/v1/systemone \
   -H 'content-type: application/json' \
   -d '{"state":{"body":"Sistema fora do ar, clientes sem acesso"},"questions":{"priority":{"type":"choice","instructions":"Prioridade do ticket","criteria":{"URGENT":"fora do ar, dados, segurança","HIGH":"bloqueio parcial","MEDIUM":"dúvida operacional","LOW":"melhoria, cosmético"}}}}'
 ```
+
+## Volume
+
+No host, o cache HF precisa ser UID 10001 (usuário `laya` na imagem):
+
+```bash
+sudo mkdir -p /home/ubuntu/octor/volumes/laya/hf-cache
+sudo chown -R 10001:10001 /home/ubuntu/octor/volumes/laya
+```
