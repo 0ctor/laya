@@ -34,6 +34,13 @@ Three checkpoints, and a `Router` that picks between them per request:
 | [`laya-multilingual`](https://huggingface.co/convaiinnovations/laya-multilingual) | mmBERT-base | 322M | 1024 | 100+ languages, 2x faster |
 | [`laya-typed-decisions`](https://huggingface.co/convaiinnovations/laya-typed-decisions) | ModernBERT-large | 421M | 1024 | the typed-decisions workflows |
 
+### What's new in 0.3.13
+
+* **Fast-path fixes.** After a CUDA out-of-memory error, the fallback to CPU now switches the TileLang fast path off first instead of retrying on CUDA. A `choice` question with a single option no longer crashes the fast path, requests longer than the fast path was built for get a clear error, and concurrent calls can no longer overwrite each other's CUDA-graph buffers.
+* **Server and runtime.** `laya-serve` drains its inference pool on shutdown and returns 401 for a malformed bearer header, and `ONNXAgent` matches `Agent` on empty question sets and long conversation lists.
+* **Fixes elsewhere.** The `laya` command prints the right probability for a choice, and LangChain remote calls refuse cross-origin or HTTPS-downgrade redirects.
+* **For contributors.** `AGENTS.md` gives AI coding assistants the contribution rules, and `laya-ts` gains `BaseHook` and default hooks.
+
 ### What's new in 0.3.12
 
 * **Correct routed batches.** `Router.predict_batch` now keeps two requests apart when their `choice` options are the same but in a different order, so every request gets the same answer as its own `predict` call (#166). The Router's predict hooks now run for every request in a batch, so a redaction hook also covers batched traffic.
