@@ -97,8 +97,13 @@ describe("identifier stripping: complexity", () => {
   // above carry the guarantee -- they are 250x and 1500x apart.
 
   it("4x the input costs under 8x the time (linear ~4, quadratic ~16)", () => {
-    const best = (n: number) =>
-      Math.min(...[0, 1, 2].map(() => elapsed(() => latinProfile("a".repeat(n)))));
+    // One untimed call per size first, so JIT tiering is not charged to either side, then
+    // the best of five: a single descheduled run on a shared CI runner must not decide it.
+    const best = (n: number) => {
+      const s = "a".repeat(n);
+      latinProfile(s);
+      return Math.min(...[0, 1, 2, 3, 4].map(() => elapsed(() => latinProfile(s))));
+    };
     const small = best(12_500);
     const large = best(50_000);
     // performance.now() granularity makes a sub-0.05 ms baseline meaningless; the
