@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel outdated pull request runs. On main, let a started run finish: merges land minutes
+  # apart, and cancelling there left whole bursts of merges without a result of their own. A
+  # newer push still replaces a run that is queued and has not started.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # transformers probes for TensorFlow at import; when TF is present its abseil runtime can
@@ -20,6 +23,7 @@ jobs:
   typescript:
     name: TypeScript (node${{ matrix.node }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: laya-ts
@@ -43,6 +47,7 @@ jobs:
   feishu-benchmark:
     name: Chinese benchmark audit (no models or API)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,6 +59,7 @@ jobs:
   test:
     name: tests (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -71,8 +77,10 @@ jobs:
           python -m pip install --upgrade pip
           # CPU-only torch keeps the job under a minute instead of pulling CUDA wheels
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          # Install with the mcp extra so laya[mcp] resolution and the laya.mcp layer are both exercised
-          pip install -e ".[mcp]"
+          # `mcp` so laya[mcp] resolution and the laya.mcp layer are both exercised, and
+          # `serve` because laya.serve and examples/server.py both import fastapi -- without
+          # it every test that touches them skips itself silently and passes.
+          pip install -e ".[mcp,serve]" httpx
 
       - name: Import check
         run: python -c "import laya; print(laya.__version__); print(sorted(laya.__all__))"
@@ -97,6 +105,7 @@ jobs:
           python tests/test_runtime_fixes.py
           python tests/test_lang_guess.py
           python tests/test_identifier_complexity.py
+          python tests/test_lang_stats.py
           python tests/test_calibration_persistence.py
           python tests/test_context_manager.py
           python tests/test_criteria_normalization.py
@@ -111,6 +120,7 @@ jobs:
           python tests/test_langchain.py
           python tests/test_portability.py
           python tests/test_training.py
+          python tests/test_example_server_limits.py
 
       - name: Email cleaning tests
         run: python tests/test_email.py
@@ -124,6 +134,7 @@ jobs:
   test-windows:
     name: tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -186,6 +197,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -200,6 +212,7 @@ jobs:
   build:
     name: package
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
