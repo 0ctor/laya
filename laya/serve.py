@@ -34,9 +34,16 @@ and touches no GPU -- which is what keeps the Nix ``pythonImportsCheck`` honest.
 """
 import hmac
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
+
+# A failed inference is reported to the client as a fixed 500 so nothing about paths,
+# weights or memory state leaks, which leaves the server log as the only place the
+# actual cause can appear. Uvicorn configures the root logger, so a module logger
+# propagates there without this module setting up any handlers.
+_log = logging.getLogger("laya.serve")
 
 # The three checkpoint names the router understands; used to decide whether a
 # client's `model` field names a Laya checkpoint (honour it) or is some other
@@ -280,6 +287,11 @@ def create_app(router: Optional[Any] = None):
             # Question validation errors name the question and what to fix: safe for clients.
             raise HTTPException(status_code=422, detail=str(e))
         except Exception:  # noqa: BLE001 -- never leak paths/weights/OOM text to clients
+            # The client still learns nothing, but the operator gets the traceback. Without
+            # this the container logs show only the 500, so a deterministic failure such as a
+            # missing C compiler for triton's JIT (#365) is invisible from the running server
+            # and has to be reproduced in-process to be diagnosed at all.
+            _log.exception("inference failed for model=%s", model)
             raise HTTPException(status_code=500, detail="inference failed")
 
     return app
