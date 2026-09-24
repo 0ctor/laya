@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel outdated pull request runs. On main, let a started run finish: merges land minutes
+  # apart, and cancelling there left whole bursts of merges without a result of their own. A
+  # newer push still replaces a run that is queued and has not started.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # transformers probes for TensorFlow at import; when TF is present its abseil runtime can
