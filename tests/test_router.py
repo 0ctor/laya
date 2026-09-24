@@ -94,7 +94,7 @@ check("latin/diacritic rate reported", analyse("Gătește-mi o rețetă de sarma
 check("latin/english has no diacritics", analyse("Please refund the duplicate charge today")["diacritic_rate"], 0.0)
 # every branch of analyse() reports the same keys, so a caller can read one without guarding
 _KEYS = {"script", "script_profile", "language", "is_english", "language_undecided",
-         "diacritic_rate", "non_latin_fraction"}
+         "diacritic_rate", "non_latin_fraction", "mixed_segment"}
 for label, text in [("english", "Please refund the duplicate charge"), ("hindi", "ग्राहक से दो बार"),
                     ("romanian", "Gătește-mi o rețetă de sarmale"), ("no letters", "12345 ???")]:
     check("analyse/keys " + label, set(analyse(text)), _KEYS)
@@ -327,6 +327,101 @@ for text in ["Please refund the duplicate charge", "Please refund the duplicate 
     check("route/identified english ignores default " + text[:24], _r_ml.route(text).model, "english")
 check("route/english reason unchanged",
       _r_lat.route("Please refund the duplicate charge on invoice 4411 today.").reason, "English Latin text")
+
+
+# --------------------------------------------------------------------- mixed states
+# A Portuguese ticket carrying an English stack trace, error payload or form template read as English
+# as a whole -- the English part is longer -- and went to the checkpoint that cannot read the
+# customer's own words. Any line or field that on its own is named a non-English language now wins.
+_TRACE = ("O sistema caiu de novo hoje de manhã, segue o log:\n"
+          "Traceback (most recent call last):\n"
+          "  File \"/app/main.py\", line 42, in handler\n"
+          "    return self.process(request)\n"
+          "ConnectionError: the connection to the database was refused because the pool is "
+          "exhausted and there is no available slot for this request")
+for label, state, segment in [
+    ("portuguese ticket + english traceback", _TRACE, "O sistema caiu de novo hoje de manhã, segue o log:"),
+    ("portuguese field + english error payload",
+     {"descricao": "O pagamento não foi processado",
+      "error": {"code": "card_declined", "message": "Your card was declined. Please try again with a "
+                "different card or contact your bank for more information."}},
+     "O pagamento não foi processado"),
+    ("english form template + portuguese body",
+     {"subject": "New ticket from the web form", "body": "Quero cancelar meu plano"},
+     "Quero cancelar meu plano"),
+    ("parenthesis in prose is not code",
+     {"subject": "Urgent: production is down for all customers since the last deploy and the "
+                 "status page is red for the whole region",
+      "body": "Deu erro (500) no login, alguém pode ver isso agora?"},
+     "Deu erro (500) no login, alguém pode ver isso agora?"),
+    # the rule runs both ways: an English ticket that pastes a foreign log goes to multilingual too
+    ("english ticket + portuguese error log",
+     "Our Brazilian branch cannot issue invoices since this morning. The system shows this message:\n"
+     "ERRO: Não foi possível emitir a nota fiscal, o certificado digital está vencido\n"
+     "Can you help us before the end of the day?",
+     "ERRO: Não foi possível emitir a nota fiscal, o certificado digital está vencido"),
+    ("english ticket + german error log",
+     "The nightly sync to the Munich server keeps failing and we lose the whole batch.\n"
+     "Fehler: Die Verbindung zum Server wurde unterbrochen, bitte versuchen Sie es spaeter noch einmal\n"
+     "Please check the firewall rules on your side.",
+     "Fehler: Die Verbindung zum Server wurde unterbrochen, bitte versuchen Sie es spaeter noch einmal"),
+    ("english ticket + spanish error payload",
+     {"subject": "Payment failed for a customer in Madrid",
+      "description": "The customer tried three times with the same card and each attempt was declined by "
+                     "the gateway, so we would like to know whether the problem is on our side or with the bank.",
+      "error": {"code": "card_declined",
+                "message": "La tarjeta fue rechazada por el banco emisor, contacte con su banco"}},
+     "La tarjeta fue rechazada por el banco emisor, contacte con su banco"),
+    # acronyms are dropped only from mixed-case text: a line written all in capitals keeps its words
+    ("all-caps portuguese line",
+     "This is the fourth email I have sent about the same order and nobody has answered any of them.\n"
+     "The customer wrote this in the chat and then closed the window:\n"
+     "QUERO MEU DINHEIRO DE VOLTA AGORA\n"
+     "Could someone from the billing team look at order 5512 today?",
+     "QUERO MEU DINHEIRO DE VOLTA AGORA"),
+]:
+    check("mixed/is not english: " + label, is_english(state), False)
+    check("mixed/segment reported: " + label, analyse(state)["mixed_segment"], segment)
+    check("mixed/routes multilingual: " + label, _r_lat.route(state).model, "multilingual")
+check("mixed/reason names the segment",
+      "a line or field reads as 'pt'" in _r_lat.route(_TRACE).reason, True)
+# English stays English: several English lines, a short foreign sign-off, and code pasted into a request
+# (`os.path` reads as Portuguese, `round(el, 2)` as Spanish, `np.mean(na)` as Portuguese)
+for label, state in [
+    ("multi-line english", "Hi team,\nThe export failed again last night.\nCan you check the logs?\nThanks"),
+    ("short portuguese sign-off", "Please resend the invoice for March, the amount is wrong.\nAtenciosamente, Joao"),
+    ("os.path", "The build broke after the refactor.\nREPO = os.path.dirname(os.path.dirname(__file__))\n"
+                "Please take a look at the import paths when you can."),
+    ("round(el)", "The latency script crashes on large runs.\nmix[key] = {\"total_s\": round(el, 2)}\n"
+                  "Can you check why the stream is empty?"),
+    ("np.mean(na)", "The summary is wrong for empty suites.\nif na: non[m] = round(float(np.mean(na)), 4)\n"
+                    "Please guard the empty case."),
+    ("english json", {"status": "open", "priority": "high",
+                      "message": "The customer was charged twice and wants a refund"}),
+    # a line carries far less text than a state, so its evidence must be two different words and no
+    # acronyms or slash compounds. A ham-radio listing on 20 Newsgroups (misc.forsale/76512) went to
+    # multilingual on `COM ... COM` alone; hockey picks on the team codes, OS/2 on `os` and `dos`.
+    ("same word twice (Nav/Com, COM)",
+     "I'm looking for good deals on the following (used or new):\nAviation Headsets (with mic).\n"
+     "Handheld Nav/Com tranciever (may consider COM only).\nPortable GPS or Loran Navigator."),
+    ("team codes", "Round two predictions for the pool, as promised.\nQUE  vs MON:  MON  in 7.\n"
+                   "PIT  vs NYI:  PIT  in 5."),
+    ("slash compound", "I need a converter for these image formats.\n"
+                       "DOS, OS/2 or platform independent programs if possible.\nThanks in advance."),
+    ("backslash path", "My modem stopped answering after the upgrade.\nC:\\DOS\\mode COM1:9600,n,8,1,p\n"
+                       "Is that the right line for a 9600 baud connection?"),
+]:
+    check("mixed/english stays english: " + label, is_english(state), True)
+    check("mixed/no segment: " + label, analyse(state)["mixed_segment"], None)
+# a state is user input: one long line with no joiner took 43 s at 40,000 characters when compounds
+# were stripped with an open-ended regex; the segment check now reads at most the 4,000-character cap
+import time as _time
+_t0 = _time.perf_counter()
+analyse({"subject": "The export failed again last night for the whole region", "body": "a" * 200_000})
+check("mixed/long single-line field stays fast", _time.perf_counter() - _t0 < 5.0, True)
+check("mixed/segment check reads at most the cap",
+      analyse({"log": "The export failed again last night for the whole region. " * 80,
+               "body": "Quero cancelar meu plano agora mesmo"})["mixed_segment"], None)
 
 
 # --------------------------------------------------------------------- plain-ASCII Romance (#172)

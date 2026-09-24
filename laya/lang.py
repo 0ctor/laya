@@ -391,11 +391,62 @@ def guess_latin_language(text: str) -> Optional[str]:
     return latin_profile(text)["language"]
 
 
+# Code is not prose in any language, but split into words it reads as one: `os.path` is Portuguese
+# (`os`), `round(el, 2)` Spanish (`el`), `non_english` Italian (`non`). A line pasted from a program
+# into an English request must not count as a foreign segment, so a line carrying code syntax --
+# `=`, `;`, braces, brackets or a call `name(` -- is skipped, and dotted or underscored identifiers
+# are dropped from the rest. Prose keeps "Deu erro (500)": the parenthesis follows a space.
+_CODE_LINE = re.compile(r"[=;{}\[\]]|\w\(")
+# Slash and backslash compounds are names, not sentences: `Nav/Com` and `OS/2` read as Portuguese
+# (`com`, `os`), `C:\DOS\mode` as Portuguese (`dos`), `ESA/UN` as Spanish (`un`). A whitespace token
+# holding a letter or digit, a joiner (`.`, `_`, `/`, `\`) and another letter or digit is an
+# identifier or a compound and is dropped whole. The pattern has a fixed length on purpose: an
+# open-ended `\w+(?:[._]\w+)+` backtracks quadratically on a long run of letters with no joiner,
+# and a state is user input.
+_JOINED = re.compile(r"[^\W_][._/\\][^\W_]")
+# An all-caps token inside mixed-case text is an acronym or a code: `MON`, `LA`, `EST`, `COM`, `DES`
+# are hockey teams, states, time zones and radio bands, not French or Portuguese. A segment written
+# entirely in capitals keeps its words -- a customer shouting in Portuguese is still Portuguese.
+_LETTER_RUN = re.compile(r"[^\W\d_]{2,}")
+
+
+def _non_english_segment(state: Union[str, dict, list, None], max_chars: int = 4000):
+    """First line or field that, read on its own, is named a non-English language, else None.
+
+    Returns (language, segment). A segment needs the evidence a whole state needs -- at least four
+    words, and a language named by `latin_profile` -- and, because one line carries far less text
+    than a state, two things more: the words that name the language must be two *different* ones
+    (`COM ... COM` in an English radio listing is one word seen twice), and acronyms and slash
+    compounds are not words. This adds no new way to call English text foreign; it only stops a
+    longer English part from outvoting a foreign one. Reads at most `max_chars` characters in all.
+    """
+    seen = 0
+    for leaf in _iter_text(state):
+        for seg in leaf.split("\n"):
+            if seen >= max_chars:
+                return None
+            seg = seg[:max_chars - seen]
+            seen += len(seg)
+            if _CODE_LINE.search(seg):
+                continue
+            prose = " ".join(tok for tok in seg.split() if not _JOINED.search(tok))
+            if any(ch.islower() for ch in prose):
+                prose = _LETTER_RUN.sub(lambda m: " " if m.group().isupper() else m.group(), prose)
+            tokens = _WORD.findall(prose)
+            if len(tokens) < 4:
+                continue
+            lang = latin_profile(prose)["language"]
+            if lang not in (None, "en") and len({w.lower() for w in tokens} & _STOP.get(lang, set())) >= 2:
+                return lang, seg.strip()
+    return None
+
+
 def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     """Full detection result for a state.
 
     Returns `script`, `script_profile`, `language` (best effort, may be None),
-    `is_english` and `non_latin_fraction`.
+    `is_english`, `non_latin_fraction` and `mixed_segment` (the line or field that made a mostly
+    English state non-English, else None).
     """
     text = state_text(state)
     counts = _script_counts(text)
@@ -410,11 +461,11 @@ def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     if script == "unknown":
         return {"script": "unknown", "script_profile": prof, "language": None,
                 "is_english": True, "language_undecided": True, "diacritic_rate": 0.0,
-                "non_latin_fraction": 0.0}
+                "non_latin_fraction": 0.0, "mixed_segment": None}
     if script != "latin":
         return {"script": script, "script_profile": prof, "language": None,
                 "is_english": False, "language_undecided": True, "diacritic_rate": 0.0,
-                "non_latin_fraction": non_latin}
+                "non_latin_fraction": non_latin, "mixed_segment": None}
     prof_lat = latin_profile(text)
     lang = prof_lat["language"]
     # Undecided is not English. Treating it as English sent every Latin-script language we hold no
@@ -423,10 +474,23 @@ def analyse(state: Union[str, dict, list, None]) -> Dict[str, object]:
     # such letters (including short English) still goes to the English one.
     undecided = lang is None
     english = lang == "en" or (undecided and not prof_lat["looks_non_english"])
+    # A Portuguese ticket with an English stack trace, error payload or form template reads as
+    # English as a whole, because the English part is longer -- yet the part a question is about is
+    # the customer's, and the English checkpoint cannot read it (0.97 confidence at 0.47 accuracy on
+    # `pt`). The cost is lopsided: English sent to multilingual loses a few points, the reverse loses
+    # calibration. So a state that would go to English is checked line by line and field by field.
+    mixed = None
+    leaves = _iter_text(state)
+    # a single line has no other part to be outvoted by, and was just read whole
+    if english and (len(leaves) > 1 or any("\n" in leaf for leaf in leaves)):
+        found = _non_english_segment(state)
+        if found:
+            lang, mixed = found
+            english, undecided = False, False
     return {"script": "latin", "script_profile": prof, "language": lang,
             "is_english": english, "language_undecided": undecided,
             "diacritic_rate": round(float(prof_lat["diacritic_rate"]), 4),
-            "non_latin_fraction": non_latin}
+            "non_latin_fraction": non_latin, "mixed_segment": mixed}
 
 
 def is_english(state: Union[str, dict, list, None]) -> bool:
