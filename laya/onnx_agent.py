@@ -49,7 +49,9 @@ class ONNXAgent(HookRegistry):
                               (used to load the tokenizer and config).
             onnx_path: Path to the exported .onnx file.
             subfolder: Optional subfolder if downloading from a repo bundle.
-            hooks, on_predict_start, on_predict_end: Opt-in prediction hooks; see `laya.hooks`.
+            hooks (HookArg): Opt-in prediction hooks; see `laya.hooks`.
+            on_predict_start (PredictHookArg): An opt-in start hook, run before inference.
+            on_predict_end (PredictHookArg): An opt-in end hook, run after inference.
             hooks_raise: When False, a failing hook warns and inference continues.
             hooks_concurrent: When False, hooks are serialised with a lock.
         """
