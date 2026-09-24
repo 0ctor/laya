@@ -891,6 +891,13 @@ failure; it does not establish calibrated confidence.
   current checkpoints can follow labels such as `true`/`false` or `yes`/`no` instead of the option
   descriptions. Use semantic labels or opaque labels such as `A`/`B`, and validate them on the
   checkpoint and states you serve.
+* **Semantic `choice` labels do not make negation safe.** In the five cancellation examples from
+  [#377](https://github.com/NandhaKishorM/laya/issues/377), a CPU run on Laya 0.3.20 with
+  `no_action` / `cancel_account` keys selected `cancel_account` for all four negated requests on
+  `laya` and two on `laya-multilingual`; one multilingual answer assigned it probability `0.9998`.
+  The positive control passed on both checkpoints. These are narrow cancellation examples, not
+  evidence that every negated state fails. Validate the exact checkpoint and wording you serve;
+  using semantic keys alone does not avoid this failure.
 * **High-cardinality choice questions and token budgets:** Sequences split into an option prompt budget (`head_max_len`) and the remaining document/state budget (`max_len - head_max_len`):
   * `laya` (English) defaults to 512 context (`head_max_len = 192`, ~320 tokens for state).
   * `laya-multilingual` and `laya-typed-decisions` default to 1,024 context (`head_max_len = 256`, ~768 tokens for state; mmBERT-base encoder supports up to 8,192 with RoPE).
