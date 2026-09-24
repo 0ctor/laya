@@ -12,6 +12,7 @@ from .presets import (
     triage_questions,
 )
 from .router import DEFAULT_MODELS, RouteDecision, Router
+from .structured import DecisionResult, decide
 
 __version__ = "0.3.11"
 
@@ -92,5 +93,7 @@ __all__ = [
     "PredictHook",
     "Hook",
     "BaseHook",
+    "decide",
+    "DecisionResult",
     "__version__",
 ]
