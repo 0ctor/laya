@@ -729,13 +729,16 @@ class Agent(HookRegistry):
             questions: Question definitions, exactly as accepted by `system_one`.
             batch_size: Optional cap on states per forward pass. `None` sends them all in one pass;
                         set it to bound peak memory when batching many or long states.
-            hooks, on_predict_start, on_predict_end: Per-call hooks, appended after any installed on
-                    the Agent. `on_predict_start` may rewrite the state/questions or call
-                    `ctx.skip(...)` to short-circuit inference; `on_predict_end` may rewrite the
-                    results. See `laya.hooks`.
+            hooks (HookArg): Per-call hooks, appended after any installed on the Agent.
+                    See `laya.hooks`.
+            on_predict_start (PredictHookArg): A per-call start hook. It may rewrite the
+                    state/questions or call `ctx.skip(...)` to short-circuit inference.
+            on_predict_end (PredictHookArg): A per-call end hook. It may rewrite the results.
             hooks_raise: Override the Agent's `hooks_raise` for this call.
-            max_len, head_max_len: Override the agent config for this call. A start hook may also
-                    set `ctx.max_len` / `ctx.head_max_len` to shape the token budget.
+            max_len: Override the agent config's `max_len` for this call. A start hook may also
+                    set `ctx.max_len` to shape the token budget.
+            head_max_len: Override the agent config's `head_max_len` for this call. A start hook
+                    may also set `ctx.head_max_len`.
             sort_by_length: Group similarly sized encoded states within windows of eight batches
                     to reduce padding. Requires an explicit `batch_size` greater than one and
                     smaller than the number of states; otherwise it has no effect. Results retain
