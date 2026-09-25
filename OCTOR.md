@@ -31,6 +31,21 @@ curl -fsS http://10.8.0.1:8343/v1/systemone \
   -d '{"state":{"body":"Sistema fora do ar, clientes sem acesso"},"questions":{"priority":{"type":"choice","instructions":"Prioridade do ticket","criteria":{"URGENT":"fora do ar, dados, segurança","HIGH":"bloqueio parcial","MEDIUM":"dúvida operacional","LOW":"melhoria, cosmético"}}}}'
 ```
 
+
+## DEV (sp1-sd-octor-2)
+
+Serviço **standalone** (não atrelado ao web-hosting).
+
+| | |
+|---|---|
+| App dir | `/home/ubuntu/octor/apps/laya/` |
+| Container | `octor-laya` |
+| Interno | `http://octor-laya:8000/v1/systemone` |
+| VPN | `http://10.8.0.9:8343/health` |
+| Device | CPU · checkpoint `multilingual` |
+
+Allowlist: `0ctor/sp1-sd-octor-2` → `apps/platform-deploy-hook/apps.json` (`branch: dev`).
+
 ## Volume
 
 No host, o cache HF precisa ser UID 10001 (usuário `laya` na imagem):
