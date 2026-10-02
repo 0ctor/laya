@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "laya",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      520
+    ],
+    "views": [
+      {
+        "id": "caminho",
+        "label": "Caminho principal",
+        "focus": [
+          "chamador",
+          "router",
+          "agent",
+          "mcp"
+        ],
+        "note": "Módulos ligados pelo código deste repositório."
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/0ctor/laya",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "8553228e7810535a12b61845efa306d595dd2bc3"
+    }
+  },
+  "components": [
+    {
+      "id": "chamador",
+      "type": "external",
+      "label": "Chamador",
+      "sublabel": "import laya",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        176,
+        72
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Router",
+      "sublabel": "laya/router.py",
+      "pos": [
+        276,
+        150
+      ],
+      "size": [
+        188,
+        84
+      ],
+      "sources": [
+        {
+          "path": "laya/router.py",
+          "line": 173,
+          "label": "Router"
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent",
+      "sublabel": "laya/agent.py",
+      "pos": [
+        512,
+        150
+      ],
+      "size": [
+        176,
+        72
+      ],
+      "sources": [
+        {
+          "path": "laya/agent.py",
+          "line": 195,
+          "label": "Agent"
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "MCP",
+      "sublabel": "laya/mcp/server.py",
+      "pos": [
+        276.0,
+        320
+      ],
+      "size": [
+        176,
+        68
+      ],
+      "sources": [
+        {
+          "path": "laya/mcp/server.py",
+          "line": 76,
+          "label": "server"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "chamador-router-decide",
+      "from": "chamador",
+      "to": "router",
+      "label": "decide",
+      "variant": "emphasis"
+    },
+    {
+      "id": "router-agent-torch",
+      "from": "router",
+      "to": "agent",
+      "label": "torch",
+      "variant": "default"
+    },
+    {
+      "id": "router-mcp-tools",
+      "from": "router",
+      "to": "mcp",
+      "label": "tools",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Pacote",
+      "items": [
+        "laya",
+        "laya.mcp"
+      ]
+    }
+  ]
+}
