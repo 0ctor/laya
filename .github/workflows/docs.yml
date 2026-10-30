@@ -22,7 +22,7 @@ concurrency:
 jobs:
   build:
     name: docs (strict build)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
     name: docs (deploy)
     needs: build
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     permissions:
       pages: write
       id-token: write

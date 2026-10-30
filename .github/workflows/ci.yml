@@ -22,7 +22,7 @@ env:
 jobs:
   typescript:
     name: TypeScript (node${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 10
     defaults:
       run:
@@ -46,7 +46,7 @@ jobs:
 
   feishu-benchmark:
     name: Chinese benchmark audit (no models or API)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
 
   test:
     name: tests (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -152,6 +152,8 @@ jobs:
   # because the variable that was untested is the OS, not the interpreter.
   test-windows:
     name: tests (windows)
+    # Org sem hosted minutes / sem runner Windows self-hosted.
+    if: false
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -231,7 +233,7 @@ jobs:
 
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -246,7 +248,7 @@ jobs:
 
   build:
     name: package
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
