@@ -18,7 +18,7 @@ permissions: read-all
 jobs:
   secrets:
     name: secret scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
 
   deps:
     name: dependency CVEs
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +69,7 @@ jobs:
 
   codeql:
     name: CodeQL
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 15
     permissions:
       security-events: write
@@ -85,7 +85,7 @@ jobs:
 
   supply_chain:
     name: no unsafe deserialization
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4

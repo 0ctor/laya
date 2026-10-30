@@ -17,6 +17,8 @@ jobs:
   spark-build:
     # Builds the DGX Spark image (ARM64, CUDA 13.0) and checks its libraries load.
     # No GPU here, so this proves installation, not inference.
+    # Org sem hosted minutes: job ARM no GitHub-hosted fica desligado até haver runner ARM.
+    if: false
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
@@ -36,13 +38,9 @@ jobs:
           docker run --rm --network none laya:spark pip check
 
   smoke:
-    # Native runners for both architectures; torch wheels install for the target, so
-    # an emulated cross-build would be slow and would not prove the ARM64 wheels.
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.runner }}
+    # Antes: matrix ubuntu-latest + ubuntu-24.04-arm. Org sem hosted minutes —
+    # só X64 self-hosted (octor-dev/prd). ARM fica no spark-build (desligado).
+    runs-on: ${{ ((github.event_name == 'pull_request' && github.base_ref == 'main') || github.ref == 'refs/heads/main') && fromJSON('["self-hosted","Linux","X64","docker","octor-prd"]') || fromJSON('["self-hosted","Linux","X64","docker","octor-dev"]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -109,7 +107,7 @@ jobs:
   http:
     # Start laya-serve the way the docs do and wait for its healthcheck. No preload,
     # so no weights download; the key is a throwaway written for this job.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, docker, octor-prd]
     timeout-minutes: 20
     env:
       COMPOSE_FILE: compose.yaml:compose.http.yaml
